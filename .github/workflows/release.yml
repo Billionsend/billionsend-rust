@@ -1,0 +1,45 @@
+name: release
+
+# Publishes the billionsend crate to crates.io at the version Cargo.toml
+# declares, via Trusted Publishing (OIDC): no token is stored. Run it by hand
+# (Actions → release → Run workflow) on a version tag. crates.io accepts a
+# Trusted Publisher only on a crate that already exists, so the very first
+# version is published by an owner from a checkout; see "Releasing" in the
+# README.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write # OIDC for crates.io Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # Only a tag that names the manifest's version publishes, so the number on
+      # crates.io is always a commit you can find.
+      - name: Run from the tag of the manifest version
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "billionsend") | .version')
+          test "v$version" = "$GITHUB_REF_NAME"
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo xtask generate --check
+      - run: cargo test --locked
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish --locked --package billionsend
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
