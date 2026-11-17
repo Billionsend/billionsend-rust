@@ -106,7 +106,7 @@ Every call returns `Result<T, billionsend::Error>`. The variant says what kind o
 | `Error::NotFound` | `404` |
 | `Error::Conflict` | `409`, such as an idempotency key reused with a different payload |
 | `Error::RateLimit` | `429`; `retry_after()` holds the server's hint in seconds |
-| `Error::Server` | `5xx` |
+| `Error::Server` | `5xx`; `retry_after()` holds the server's hint when it sent one |
 | `Error::Api` | any other status, or a success whose body is not the expected JSON |
 | `Error::Connection` | no answer: DNS, connection or TLS failure (no status) |
 | `Error::Timeout` | the request timed out |
@@ -210,7 +210,7 @@ println!("{}", code["code"]);
 - `InboxStreamItem::Event(InboxStreamEvent { id, event, data })`, where `event` is the webhook event name (`inbox.email.received`, `inbox.thread.created`, `inbox.draft.sent`, `email.received`, …) and `data` is the JSON `{ type, created_at, inbox_id, data }`, the webhook payload's metadata with the ids to read next (`thread_id`, `email_id`, `draft_id`).
 - `InboxStreamItem::Gap(StreamGapEvent { reason })` (`stream.gap`) when the stream resumed from further back than the server keeps (24 hours): events may be missing, so read the lists again. One stream hands it out once per position.
 
-When the connection drops (the server also closes every stream about every ten minutes), the stream reconnects with `Last-Event-ID` and replays what it missed before the live events. It gives up after `max_reconnects` reconnects in a row that fail to open (default 5) with an `Error::Connection`; a connection that opens resets the count, so a quiet inbox keeps streaming; a refusal a retry cannot fix (a revoked key) comes back as its own variant and ends the stream. One inbox's stream ends after that inbox's `inbox.deleted` or `inbox.expired`. Dropping the stream closes the connection.
+When the connection drops (the server also closes every stream about every ten minutes), the stream reconnects with `Last-Event-ID` and replays what it missed before the live events. A reconnect the API refuses with a `retry-after` (a `429` for the stream cap, a `5xx`) waits as it asks; one asking for more than a minute ends the stream with that error. It gives up after `max_reconnects` reconnects in a row that fail to open (default 5), with the API's last refusal (`Error::RateLimit`, …) or, when the API never answered, an `Error::Connection`; a connection that opens resets the count, so a quiet inbox keeps streaming; a refusal a retry cannot fix (a revoked key) comes back as its own variant and ends the stream. One inbox's stream ends after that inbox's `inbox.deleted` or `inbox.expired`. Dropping the stream closes the connection.
 
 ```rust,no_run
 # async fn run(bs: billionsend::BillionSend, saved: String) -> Result<(), billionsend::Error> {

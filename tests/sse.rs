@@ -188,20 +188,19 @@ async fn one_inbox_stream_ends_when_the_inbox_is_gone() {
 }
 
 #[tokio::test]
-async fn gives_up_after_max_reconnects() {
+async fn gives_up_after_max_reconnects_that_never_answer() {
     let mock = ContractMock::start().await;
     mock.respond(
         "GET",
         "/inboxes/events",
         sse(&event("1", "inbox.email.received")),
     );
+    // Every reconnect waits past the connection timeout: no answer at all.
     for _ in 0..5 {
-        mock.error(
+        mock.respond(
             "GET",
             "/inboxes/events",
-            503,
-            "internal_server_error",
-            "Down",
+            sse(&event("9", "inbox.email.received")).set_delay(Duration::from_millis(500)),
         );
     }
     let stream = mock
@@ -209,6 +208,7 @@ async fn gives_up_after_max_reconnects() {
         .inboxes()
         .events()
         .stream()
+        .timeout(Duration::from_millis(50))
         .max_reconnects(2)
         .reconnect_delay(Duration::from_millis(5))
         .await
@@ -216,7 +216,7 @@ async fn gives_up_after_max_reconnects() {
     let items: Vec<_> = stream.collect().await;
     assert_eq!(items.len(), 2);
     let error = items[1].as_ref().unwrap_err();
-    assert!(matches!(error, Error::Connection(_)));
+    assert!(matches!(error, Error::Connection(_)), "{error:?}");
     assert_eq!(
         error.message(),
         "The event stream disconnected; gave up after 2 reconnects"
@@ -226,6 +226,129 @@ async fn gives_up_after_max_reconnects() {
         3,
         "the first connection and two reconnects, each tried once"
     );
+}
+
+#[tokio::test]
+async fn reconnects_refused_by_the_api_end_with_the_api_error() {
+    let mock = ContractMock::start().await;
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("1", "inbox.email.received")),
+    );
+    mock.error(
+        "GET",
+        "/inboxes/events",
+        503,
+        "internal_server_error",
+        "Down",
+    );
+    for _ in 0..3 {
+        mock.error(
+            "GET",
+            "/inboxes/events",
+            429,
+            "too_many_streams",
+            "Too many open streams",
+        )
+        .header("retry-after", "0");
+    }
+    let stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .max_reconnects(3)
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    let items: Vec<_> = stream.collect().await;
+    assert_eq!(items.len(), 2);
+    let error = items[1].as_ref().unwrap_err();
+    assert!(matches!(error, Error::RateLimit(_)), "{error:?}");
+    assert_eq!(error.name(), "too_many_streams");
+    assert_eq!(error.status_code(), Some(429));
+    assert_eq!(mock.calls().len(), 4);
+}
+
+#[tokio::test]
+async fn a_refused_reconnect_waits_as_retry_after_asks() {
+    let mock = ContractMock::start().await;
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("1", "inbox.email.received")),
+    );
+    mock.error(
+        "GET",
+        "/inboxes/events",
+        429,
+        "too_many_streams",
+        "Too many open streams",
+    )
+    .header("retry-after", "1");
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("2", "inbox.email.received")),
+    );
+    let mut stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    assert!(matches!(stream.next().await, Some(Ok(_))));
+    let started = std::time::Instant::now();
+    let item = stream.next().await;
+    assert!(
+        matches!(item, Some(Ok(InboxStreamItem::Event(ref e))) if e.id == "2"),
+        "{item:?}"
+    );
+    assert!(
+        started.elapsed() >= Duration::from_millis(1000),
+        "waited {:?}",
+        started.elapsed()
+    );
+    assert_eq!(mock.calls().len(), 3);
+}
+
+#[tokio::test]
+async fn a_retry_after_over_a_minute_ends_the_stream_at_once() {
+    let mock = ContractMock::start().await;
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("1", "inbox.email.received")),
+    );
+    mock.error(
+        "GET",
+        "/inboxes/events",
+        429,
+        "too_many_streams",
+        "Too many open streams",
+    )
+    .header("retry-after", "120");
+    let stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let items: Vec<_> = tokio::time::timeout(Duration::from_secs(5), stream.collect())
+        .await
+        .expect("the stream ends at once");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(items.len(), 2);
+    let error = items[1].as_ref().unwrap_err();
+    assert!(matches!(error, Error::RateLimit(_)), "{error:?}");
+    assert_eq!(error.retry_after(), Some(120.0));
+    assert_eq!(mock.calls().len(), 2, "no reconnect after the refusal");
 }
 
 #[tokio::test]

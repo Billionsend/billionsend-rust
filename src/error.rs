@@ -14,7 +14,7 @@ pub struct ErrorDetails {
     pub message: String,
     /// The answer's `x-request-id`: the id of the request on the dashboard's Logs page.
     pub request_id: Option<String>,
-    /// For a 429, the server's `retry-after` hint in seconds.
+    /// For a 429 or a 5xx, the server's `retry-after` hint in seconds, when it sent one.
     pub retry_after: Option<f64>,
 }
 
@@ -54,7 +54,8 @@ pub enum Error {
     /// 429: a rate limit, a sending quota or a stream cap. `retry_after` is the
     /// server's hint in seconds.
     RateLimit(ErrorDetails),
-    /// 5xx: the API failed to answer the request.
+    /// 5xx: the API failed to answer the request. `retry_after` is the
+    /// server's hint in seconds, when it sent one.
     Server(ErrorDetails),
     /// Any other answer outside 2xx, or an answer the client could not read.
     Api(ErrorDetails),
@@ -108,7 +109,7 @@ impl Error {
         self.details().request_id.as_deref()
     }
 
-    /// For a 429, the server's `retry-after` hint in seconds.
+    /// For a 429 or a 5xx, the server's `retry-after` hint in seconds, when it sent one.
     pub fn retry_after(&self) -> Option<f64> {
         self.details().retry_after
     }
@@ -164,6 +165,10 @@ impl Error {
                 (APPLICATION_ERROR.to_owned(), message)
             }
         };
+        let hint = || {
+            crate::retry::parse_retry_after(retry_after, std::time::SystemTime::now())
+                .map(|d| d.as_secs_f64())
+        };
         let details = ErrorDetails {
             status_code: Some(status),
             name,
@@ -178,14 +183,13 @@ impl Error {
             404 => Error::NotFound(details),
             409 => Error::Conflict(details),
             429 => Error::RateLimit(ErrorDetails {
-                retry_after: crate::retry::parse_retry_after(
-                    retry_after,
-                    std::time::SystemTime::now(),
-                )
-                .map(|d| d.as_secs_f64()),
+                retry_after: hint(),
                 ..details
             }),
-            s if s >= 500 => Error::Server(details),
+            s if s >= 500 => Error::Server(ErrorDetails {
+                retry_after: hint(),
+                ..details
+            }),
             _ => Error::Api(details),
         }
     }

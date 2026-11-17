@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::request::Request;
-use crate::retry::retryable;
+use crate::retry::{MAX_RETRY_AFTER, retryable};
 
 /// The event name of a [`StreamGapEvent`].
 pub const STREAM_GAP_EVENT: &str = "stream.gap";
@@ -228,6 +228,10 @@ struct State {
     reconnect: bool,
     max_reconnects: u32,
     failures: u32,
+    /// The wait before the next reconnect, when the last refusal named one (`retry-after`).
+    wait: Option<Duration>,
+    /// The last failed reconnect's error, when it was an answer of the API.
+    refused: Option<Error>,
     gap_at: Option<Option<String>>,
     ends_on: &'static [&'static str],
     done: bool,
@@ -310,18 +314,24 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
         // every stream about every ten minutes, events or not) is no failure.
         if state.failures >= state.max_reconnects {
             state.done = true;
-            let error = Error::connection(format!(
-                "The event stream disconnected; gave up after {} reconnects",
-                state.max_reconnects
-            ));
+            // The API's own refusal (a 429 stream cap, a 5xx) says more than
+            // "gave up"; a connection that never answered says nothing more.
+            let error = state.refused.take().unwrap_or_else(|| {
+                Error::connection(format!(
+                    "The event stream disconnected; gave up after {} reconnects",
+                    state.max_reconnects
+                ))
+            });
             return Some((Err(error), state));
         }
-        tokio::time::sleep(state.delay).await;
+        let wait = state.wait.take().unwrap_or(state.delay);
+        tokio::time::sleep(wait).await;
         let position = state.position();
         let request = with_position(&state.request, position.as_deref());
         match request.execute_stream(Some(0)).await {
             Ok(response) => {
                 state.failures = 0;
+                state.refused = None;
                 state.parser = EventParser::new(position);
                 state.body = Some(Box::pin(response.bytes_stream()));
             }
@@ -329,7 +339,20 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
                 state.done = true;
                 return Some((Err(error), state));
             }
-            Err(_) => state.failures += 1,
+            Err(error) => {
+                state.failures += 1;
+                // A refusal with `retry-after` is waited out, unless it asks
+                // for longer than a minute, which ends the stream at once.
+                if let Some(seconds) = error.retry_after() {
+                    let wait = Duration::from_secs_f64(seconds);
+                    if wait > MAX_RETRY_AFTER {
+                        state.done = true;
+                        return Some((Err(error), state));
+                    }
+                    state.wait = Some(wait);
+                }
+                state.refused = error.status_code().is_some().then_some(error);
+            }
         }
     }
 }
@@ -340,9 +363,13 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
 /// `Last-Event-ID`, and the events in between are replayed first, unless
 /// `reconnect(false)` was set. A connection that opens resets the count of
 /// failures, so a quiet inbox whose stream is closed and reopened again and
-/// again keeps streaming; after `max_reconnects` reconnects in a row that fail
-/// to open it yields an [`Error::Connection`] and ends; an error a retry cannot fix (a
-/// revoked key, say) is yielded as itself and ends the stream.
+/// again keeps streaming. A refused reconnect waits as its `retry-after` asks
+/// (one over a minute ends the stream with that error at once), otherwise the
+/// reconnect delay. After `max_reconnects` reconnects in a row that fail to
+/// open it ends with the last refusal of the API (an [`Error::RateLimit`] for
+/// the stream cap, say), or an [`Error::Connection`] when the API never
+/// answered. An error a retry cannot fix (a revoked key, say) is yielded as
+/// itself and ends the stream.
 pub struct EventStream {
     inner: Pin<Box<dyn Stream<Item = Result<InboxStreamItem>> + Send>>,
     position: Arc<Mutex<Option<String>>>,
@@ -377,6 +404,8 @@ impl EventStream {
             reconnect: options.reconnect,
             max_reconnects: options.max_reconnects,
             failures: 0,
+            wait: None,
+            refused: None,
             gap_at: None,
             ends_on,
             done: false,

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 (2026-11-17)
+
+- An inbox event stream whose reconnect the API refuses with a `retry-after` (a 429 for the stream cap, a 5xx) waits as it asks before trying again; one asking for more than a minute ends the stream with that error at once. When the reconnects run out, the stream ends with the API's own last refusal (`Error::RateLimit`, `Error::Server`, …) instead of a general `Error::Connection`, which stays for reconnects that got no answer at all.
+- `Error::retry_after()` now also holds a 5xx answer's `retry-after`, not only a 429's.
+
 ## 0.1.1 (2026-11-17)
 
 - Inbox event streams no longer give up on a quiet inbox. The server closes every stream about every ten minutes, and a connection that opened and then ended normally used to count as a failed reconnect, so after about an hour without events the stream ended with "gave up after 5 reconnects". Now a connection that opens resets the count, and `max_reconnects` counts only reconnects in a row that fail to open.

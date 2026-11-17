@@ -107,3 +107,19 @@ async fn a_success_that_is_not_json() {
             .starts_with("The response body is not the expected JSON")
     );
 }
+
+#[tokio::test]
+async fn a_5xx_carries_retry_after_too() {
+    let mock = ContractMock::start().await;
+    mock.error("GET", "/domains", 503, "internal_server_error", "Busy")
+        .header("retry-after", "7");
+    let error = mock
+        .client()
+        .domains()
+        .list()
+        .max_retries(0)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::Server(_)));
+    assert_eq!(error.retry_after(), Some(7.0));
+}
