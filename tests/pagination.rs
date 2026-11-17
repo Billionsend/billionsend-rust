@@ -176,4 +176,20 @@ async fn more_pages_but_no_id_to_continue_from_is_an_error_after_the_page() {
         "The first item of the list page has no id to continue from"
     );
     assert_eq!(mock.calls().len(), 1);
+
+    mock.clear();
+    let mut empty_id = page(&["a", ""], true);
+    empty_id["has_more"] = json!(true);
+    mock.respond(
+        "GET",
+        "/domains",
+        wiremock::ResponseTemplate::new(200).set_body_json(empty_id),
+    );
+    let items: Vec<_> = mock.client().domains().list().into_stream().collect().await;
+    assert_eq!(items.len(), 3, "an empty id counts as none");
+    assert_eq!(
+        items[2].as_ref().unwrap_err().message(),
+        "The last item of the list page has no id to continue from"
+    );
+    assert_eq!(mock.calls().len(), 1);
 }

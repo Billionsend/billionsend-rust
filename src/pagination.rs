@@ -39,7 +39,7 @@ fn page_items(page: Value) -> Result<(Vec<Value>, bool)> {
 /// Walks a cursor-paginated list one item at a time, fetching pages on demand.
 /// A page without a `data` array ends the stream with an error at once; a page
 /// that has more after it but whose edge item (the last one forward, the first
-/// one backward) has no string `id` hands out its items, then ends the stream
+/// one backward) has no non-empty string `id` hands out its items, then ends the stream
 /// with an error, since there is no cursor to continue from.
 pub(crate) fn paginate(mut request: Request) -> Paginate {
     let backward = request.query_value("before").is_some_and(|v| !v.is_empty());
@@ -81,6 +81,7 @@ pub(crate) fn paginate(mut request: Request) -> Paginate {
                 let cursor = edge
                     .and_then(|item| item.get("id"))
                     .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
                     .map(str::to_owned);
                 if items.is_empty() {
                     return None;
