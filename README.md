@@ -313,6 +313,8 @@ Each method is the operation's `operationId` in snake_case: `inboxes.threads.lab
 
 ## Development
 
+The library builds on Rust 1.85 or later (CI checks it with 1.85); the tests and the `xtask` need a recent stable toolchain, since their dev-dependencies require a newer Rust.
+
 ```bash
 cargo test
 cargo clippy --all-targets -- -D warnings
