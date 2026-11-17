@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-11-17)
+
+- Inbox event streams no longer give up on a quiet inbox. The server closes every stream about every ten minutes, and a connection that opened and then ended normally used to count as a failed reconnect, so after about an hour without events the stream ended with "gave up after 5 reconnects". Now a connection that opens resets the count, and `max_reconnects` counts only reconnects in a row that fail to open.
+
 ## 0.1.0 (2026-11-17)
 
 - First version of the BillionSend SDK for Rust: all 139 operations of the BillionSend API, grouped by resource, each method named after its `operationId` in snake_case, generated from the OpenAPI document with its descriptions as doc comments. `emails.metrics`, which is also the group of `links`, `countries` and `clients`, is `emails().metrics().get()`.

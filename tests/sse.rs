@@ -323,3 +323,83 @@ async fn a_retry_field_sets_the_reconnect_delay() {
         .expect("the server's retry replaced the 30 s delay");
     assert_eq!(items.len(), 2);
 }
+
+#[tokio::test]
+async fn a_quiet_stream_closed_again_and_again_keeps_reconnecting() {
+    let mock = ContractMock::start().await;
+    // The server closes every stream about every ten minutes; a quiet inbox
+    // gets nothing but keepalive comments in between.
+    for _ in 0..8 {
+        mock.respond("GET", "/inboxes/events", sse(": keepalive\n\n"));
+    }
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("1", "inbox.email.received")),
+    );
+    let mut stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .max_reconnects(2)
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    let item = tokio::time::timeout(Duration::from_secs(10), stream.next())
+        .await
+        .expect("the stream keeps reconnecting");
+    assert!(
+        matches!(item, Some(Ok(InboxStreamItem::Event(ref e))) if e.id == "1"),
+        "{item:?}"
+    );
+    assert_eq!(
+        mock.calls().len(),
+        9,
+        "eight quiet connections, then the event"
+    );
+    mock.assert_clean();
+}
+
+#[tokio::test]
+async fn failed_reconnects_count_until_one_opens() {
+    let mock = ContractMock::start().await;
+    mock.respond("GET", "/inboxes/events", sse(": keepalive\n\n"));
+    // A failure, an open quiet connection that resets the count, another
+    // failure: three ends and two failures, but never two failures in a row.
+    mock.error(
+        "GET",
+        "/inboxes/events",
+        503,
+        "internal_server_error",
+        "Down",
+    );
+    mock.respond("GET", "/inboxes/events", sse(": keepalive\n\n"));
+    mock.error(
+        "GET",
+        "/inboxes/events",
+        503,
+        "internal_server_error",
+        "Down",
+    );
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("7", "inbox.email.received")),
+    );
+    let mut stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .max_reconnects(2)
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    let item = stream.next().await;
+    assert!(
+        matches!(item, Some(Ok(InboxStreamItem::Event(ref e))) if e.id == "7"),
+        "{item:?}"
+    );
+    assert_eq!(mock.calls().len(), 5);
+}

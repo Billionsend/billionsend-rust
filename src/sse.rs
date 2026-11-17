@@ -305,8 +305,10 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
         if !state.reconnect {
             return None;
         }
-        state.failures += 1;
-        if state.failures > state.max_reconnects {
+        // `failures` counts the reconnects in a row that did not open: an
+        // open connection resets it, and its normal end (the server closes
+        // every stream about every ten minutes, events or not) is no failure.
+        if state.failures >= state.max_reconnects {
             state.done = true;
             let error = Error::connection(format!(
                 "The event stream disconnected; gave up after {} reconnects",
@@ -319,6 +321,7 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
         let request = with_position(&state.request, position.as_deref());
         match request.execute_stream(Some(0)).await {
             Ok(response) => {
+                state.failures = 0;
                 state.parser = EventParser::new(position);
                 state.body = Some(Box::pin(response.bytes_stream()));
             }
@@ -326,7 +329,7 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
                 state.done = true;
                 return Some((Err(error), state));
             }
-            Err(_) => {}
+            Err(_) => state.failures += 1,
         }
     }
 }
@@ -335,8 +338,10 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
 /// dropping it closes the connection. When the connection drops (the server
 /// also closes every stream about every ten minutes) it reconnects with
 /// `Last-Event-ID`, and the events in between are replayed first, unless
-/// `reconnect(false)` was set. After `max_reconnects` failures in a row it
-/// yields an [`Error::Connection`] and ends; an error a retry cannot fix (a
+/// `reconnect(false)` was set. A connection that opens resets the count of
+/// failures, so a quiet inbox whose stream is closed and reopened again and
+/// again keeps streaming; after `max_reconnects` reconnects in a row that fail
+/// to open it yields an [`Error::Connection`] and ends; an error a retry cannot fix (a
 /// revoked key, say) is yielded as itself and ends the stream.
 pub struct EventStream {
     inner: Pin<Box<dyn Stream<Item = Result<InboxStreamItem>> + Send>>,
@@ -439,7 +444,8 @@ macro_rules! stream_builder {
                 self
             }
 
-            /// Reconnect attempts in a row before giving up (default 5).
+            /// Reconnects in a row that fail to open before giving up (default
+            /// 5). A connection that opens resets the count.
             pub fn max_reconnects(mut self, max_reconnects: u32) -> Self {
                 self.options.max_reconnects = max_reconnects;
                 self
