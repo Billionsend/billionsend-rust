@@ -143,7 +143,7 @@ while let Some(contact) = contacts.try_next().await? {
 # Ok(()) }
 ```
 
-Thread search pages the same way (`inboxes().threads().search(inbox).query("invoice").into_stream()`). Starting with `before` walks backward. A failed page ends the stream with its error.
+Thread search pages the same way (`inboxes().threads().search(inbox).query("invoice").into_stream()`). Starting with `before` walks backward. A failed page ends the stream with its error; so does a page without a `data` array (`application_error`, "The list page has no data array"), and a page that says there is more but whose last item (first, walking backward) has no `id` to continue from, after its items.
 
 ## An agent's inbox: wait, read, reply
 

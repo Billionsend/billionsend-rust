@@ -99,3 +99,81 @@ async fn a_failed_page_ends_the_stream_with_its_error() {
     assert!(matches!(error, Error::Authentication(_)));
     assert!(stream.next().await.is_none());
 }
+
+#[tokio::test]
+async fn a_page_without_a_data_array_is_an_error() {
+    let mock = ContractMock::start().await;
+    for answer in [
+        json!({ "object": "list", "has_more": false }),
+        json!({ "object": "list", "has_more": false, "data": null }),
+        json!({ "object": "list", "has_more": false, "data": {} }),
+        json!([]),
+        json!("list"),
+    ] {
+        mock.clear();
+        mock.respond(
+            "GET",
+            "/domains",
+            wiremock::ResponseTemplate::new(200).set_body_json(answer.clone()),
+        );
+        let mut stream = mock.client().domains().list().into_stream();
+        let error = stream.next().await.unwrap().unwrap_err();
+        assert!(
+            matches!(error, Error::Application(_)),
+            "{answer}: {error:?}"
+        );
+        assert_eq!(error.name(), "application_error");
+        assert_eq!(error.status_code(), None);
+        assert_eq!(error.message(), "The list page has no data array");
+        assert!(stream.next().await.is_none(), "{answer}");
+        assert_eq!(mock.calls().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn more_pages_but_no_id_to_continue_from_is_an_error_after_the_page() {
+    let mock = ContractMock::start().await;
+    let mut forward = page(&["a", "b"], true);
+    forward["data"][1].as_object_mut().unwrap().remove("id");
+    mock.respond(
+        "GET",
+        "/domains",
+        wiremock::ResponseTemplate::new(200).set_body_json(forward),
+    );
+    let mut stream = mock.client().domains().list().into_stream();
+    assert_eq!(stream.next().await.unwrap().unwrap()["id"], "a");
+    assert!(stream.next().await.unwrap().unwrap().get("id").is_none());
+    let error = stream.next().await.unwrap().unwrap_err();
+    assert!(matches!(error, Error::Application(_)));
+    assert_eq!(error.status_code(), None);
+    assert_eq!(
+        error.message(),
+        "The last item of the list page has no id to continue from"
+    );
+    assert!(stream.next().await.is_none());
+    assert_eq!(mock.calls().len(), 1, "no second request");
+
+    mock.clear();
+    let mut backward = page(&["x", "y"], true);
+    backward["data"][0]["id"] = json!(42);
+    mock.respond(
+        "GET",
+        "/domains",
+        wiremock::ResponseTemplate::new(200).set_body_json(backward),
+    );
+    let items: Vec<_> = mock
+        .client()
+        .domains()
+        .list()
+        .before("z")
+        .into_stream()
+        .collect()
+        .await;
+    assert_eq!(items.len(), 3);
+    assert!(items[0].is_ok() && items[1].is_ok());
+    assert_eq!(
+        items[2].as_ref().unwrap_err().message(),
+        "The first item of the list page has no id to continue from"
+    );
+    assert_eq!(mock.calls().len(), 1);
+}
