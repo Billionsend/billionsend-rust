@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 use crate::client::BillionSend;
 use crate::error::{Error, Result};
 use crate::retry::{idempotent_method, new_idempotency_key, retry_delay, retryable};
+use crate::upload::{FileKind, FileUpload, Form};
 
 /// The characters `encodeURIComponent` leaves alone stay; everything else is escaped.
 const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -54,7 +55,9 @@ pub(crate) struct Request {
     method: Method,
     path: String,
     query: Vec<(String, String)>,
-    body: Option<Vec<u8>>,
+    body: Option<Bytes>,
+    /// An upload's file and fields, encoded into `body` when sent.
+    form: Option<Form>,
     headers: Vec<(String, String)>,
     idempotent: bool,
     idempotency_key: Option<String>,
@@ -117,6 +120,12 @@ impl Request {
             let name = &rest[open + 1..close];
             let value = params.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
             match value {
+                // A URL folds these away, and the request would reach another route.
+                Some(v @ ("." | "..")) => {
+                    error.get_or_insert_with(|| {
+                        Error::application(format!("Invalid path parameter \"{name}\": \"{v}\""))
+                    });
+                }
                 Some(v) if !v.is_empty() => path.extend(utf8_percent_encode(v, PATH_SEGMENT)),
                 _ => {
                     error.get_or_insert_with(|| {
@@ -133,6 +142,7 @@ impl Request {
             path,
             query: Vec::new(),
             body: None,
+            form: None,
             headers: Vec::new(),
             idempotent: false,
             idempotency_key: None,
@@ -158,7 +168,7 @@ impl Request {
 
     pub(crate) fn json<B: Serialize + ?Sized>(mut self, body: &B) -> Self {
         match serde_json::to_vec(body) {
-            Ok(bytes) => self.body = Some(bytes),
+            Ok(bytes) => self.body = Some(bytes.into()),
             Err(e) => {
                 self.error.get_or_insert_with(|| {
                     Error::application(format!("The request body does not serialise: {e}"))
@@ -166,6 +176,36 @@ impl Request {
             }
         }
         self
+    }
+
+    /// Makes this an upload: `multipart/form-data` with this file.
+    pub(crate) fn file(mut self, field: &'static str, file: FileUpload, kind: FileKind) -> Self {
+        self.form = Some(Form::new(field, file, kind));
+        self
+    }
+
+    /// A text field of an upload.
+    pub(crate) fn set_field(&mut self, name: &'static str, value: String) {
+        self.form
+            .as_mut()
+            .expect("only uploads have fields")
+            .set_field(name, value);
+    }
+
+    /// A field of an upload the API reads as JSON: a string is sent as it is
+    /// (already encoded), anything else is encoded.
+    pub(crate) fn set_json_field<T: Serialize + ?Sized>(&mut self, name: &'static str, value: &T) {
+        match serde_json::to_string(value) {
+            Ok(json) => {
+                let text = serde_json::from_str::<String>(&json).unwrap_or(json);
+                self.set_field(name, text);
+            }
+            Err(e) => {
+                self.error.get_or_insert_with(|| {
+                    Error::application(format!("The {name} field does not serialise: {e}"))
+                });
+            }
+        }
     }
 
     pub(crate) fn set_query(&mut self, name: &str, value: String) {
@@ -223,12 +263,15 @@ impl Request {
         }
         for (name, value) in &self.headers {
             let name = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|_| Error::application(format!("Invalid header name {name:?}")))?;
+                .map_err(|_| Error::invalid_header(format!("Invalid header name {name:?}")))?;
             let value = HeaderValue::from_str(value)
-                .map_err(|_| Error::application(format!("Invalid value for header {name}")))?;
+                .map_err(|_| Error::invalid_header(format!("Invalid value for header {name}")))?;
             headers.insert(name, value);
         }
-        if self.body.is_some() {
+        if let Some(form) = &self.form {
+            let value = HeaderValue::from_str(&form.content_type()).expect("an ASCII content type");
+            headers.insert(CONTENT_TYPE, value);
+        } else if self.body.is_some() {
             headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
         let key = match &self.idempotency_key {
@@ -240,7 +283,7 @@ impl Request {
         };
         if let Some(key) = key {
             let value = HeaderValue::from_str(&key)
-                .map_err(|_| Error::application("Invalid idempotency key"))?;
+                .map_err(|_| Error::invalid_header("Invalid value for header idempotency-key"))?;
             headers.insert(IDEMPOTENCY_KEY, value);
         }
         if self.auth {
@@ -253,10 +296,16 @@ impl Request {
                 }));
             };
             let value = HeaderValue::from_str(&format!("Bearer {api_key}"))
-                .map_err(|_| Error::application("The API key is not a valid header value"))?;
+                .map_err(|_| Error::invalid_header("The API key is not a valid header value"))?;
             headers.insert(AUTHORIZATION, value);
         } else {
             headers.remove(AUTHORIZATION);
+        }
+        // `HeaderValue` lets non-ASCII bytes through; the API does not take them.
+        if let Some((name, _)) = headers.iter().find(|(_, v)| v.to_str().is_err()) {
+            return Err(Error::invalid_header(format!(
+                "Invalid value for header {name}"
+            )));
         }
         let keyed = headers.contains_key(IDEMPOTENCY_KEY);
         Ok((headers, keyed))
@@ -341,13 +390,17 @@ impl Request {
     }
 
     /// Sends the request, retrying what is safe to retry, and returns the 2xx answer.
-    pub(crate) async fn execute(self) -> Result<Answer> {
+    pub(crate) async fn execute(mut self) -> Result<Answer> {
         if let Some(error) = self.error.clone() {
             return Err(error);
         }
         let (headers, keyed) = self.build_headers(false)?;
+        if let Some(form) = &self.form {
+            self.body = Some(form.encode()?);
+        }
         let inner = &self.client.inner;
-        let may_retry = idempotent_method(&self.method) || keyed;
+        // An upload is not repeated blindly, whatever its method.
+        let may_retry = keyed || (idempotent_method(&self.method) && self.form.is_none());
         let max_retries = self.max_retries.unwrap_or(inner.max_retries);
         let timeout = self.timeout.unwrap_or(inner.timeout);
         let mut attempt = 0u32;
@@ -365,7 +418,9 @@ impl Request {
                 }
                 Err(error) => (error, None),
             };
-            if !may_retry || attempt >= max_retries || !retryable(&error, keyed) {
+            // A 429 is answered before anything is written: any request may repeat after one.
+            let repeatable = may_retry || matches!(error, Error::RateLimit(_));
+            if !repeatable || attempt >= max_retries || !retryable(&error, keyed) {
                 return Err(error);
             }
             let Some(delay) = retry_delay(
@@ -469,8 +524,14 @@ impl Request {
     }
 }
 
+/// The answer's JSON; a success with no body reads as `null`.
 fn parse<T: DeserializeOwned>(answer: &Answer) -> Result<T> {
-    serde_json::from_slice(&answer.body).map_err(|e| {
+    let body: &[u8] = if answer.body.trim_ascii().is_empty() {
+        b"null"
+    } else {
+        &answer.body
+    };
+    serde_json::from_slice(body).map_err(|e| {
         Error::Api(crate::error::ErrorDetails {
             status_code: Some(answer.status),
             request_id: header_str(&answer.headers, "x-request-id"),

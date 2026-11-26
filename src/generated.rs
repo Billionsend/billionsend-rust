@@ -15,6 +15,14 @@ impl BillionSend {
     pub fn audiences(&self) -> resources::Audiences<'_> {
         resources::Audiences { client: self }
     }
+    /// The `automations` operations.
+    pub fn automations(&self) -> resources::Automations<'_> {
+        resources::Automations { client: self }
+    }
+    /// The `brand` operations.
+    pub fn brand(&self) -> resources::Brand<'_> {
+        resources::Brand { client: self }
+    }
     /// The `broadcasts` operations.
     pub fn broadcasts(&self) -> resources::Broadcasts<'_> {
         resources::Broadcasts { client: self }
@@ -39,9 +47,21 @@ impl BillionSend {
     pub fn emails(&self) -> resources::Emails<'_> {
         resources::Emails { client: self }
     }
+    /// The `events` operations.
+    pub fn events(&self) -> resources::Events<'_> {
+        resources::Events { client: self }
+    }
     /// The `inboxes` operations.
     pub fn inboxes(&self) -> resources::Inboxes<'_> {
         resources::Inboxes { client: self }
+    }
+    /// The `logs` operations.
+    pub fn logs(&self) -> resources::Logs<'_> {
+        resources::Logs { client: self }
+    }
+    /// The `oauthGrants` operations.
+    pub fn oauth_grants(&self) -> resources::OauthGrants<'_> {
+        resources::OauthGrants { client: self }
     }
     /// The `segments` operations.
     pub fn segments(&self) -> resources::Segments<'_> {
@@ -90,6 +110,7 @@ pub mod resources {
     use crate::client::BillionSend;
     use crate::request::Request;
     use crate::sse::StreamOptions;
+    use crate::upload::FileKind;
 
     /// The `agent` operations.
     #[derive(Debug, Clone, Copy)]
@@ -166,6 +187,25 @@ pub mod resources {
             let inner = Request::new(self.client, Method::GET, "/api-keys", &[]);
             requests::ApiKeysList { inner }
         }
+        /// Update an API key
+        ///
+        /// `PATCH /api-keys/{id}`
+        ///
+        /// Renames the key. Its permission, domain and inbox scope never change: mint a new key for another scope. A key held to one domain updates only keys held to that same domain; any other key is not found.
+        pub fn update<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::ApiKeysUpdate {
+            let inner = Request::new(
+                self.client,
+                Method::PATCH,
+                "/api-keys/{id}",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::ApiKeysUpdate { inner }
+        }
     }
 
     /// The `audiences` operations.
@@ -190,7 +230,7 @@ pub mod resources {
     }
 
     impl AudiencesContacts<'_> {
-        /// Create a contact
+        /// Create a contact in an audience
         ///
         /// `POST /audiences/{audienceId}/contacts`
         pub fn create<B: serde::Serialize + ?Sized>(
@@ -207,7 +247,7 @@ pub mod resources {
             .json(body);
             requests::AudiencesContactsCreate { inner }
         }
-        /// Delete a contact
+        /// Delete a contact from an audience
         ///
         /// `DELETE /audiences/{audienceId}/contacts/{id}`
         pub fn delete(
@@ -223,7 +263,7 @@ pub mod resources {
             );
             requests::AudiencesContactsDelete { inner }
         }
-        /// Retrieve a contact
+        /// Retrieve a contact in an audience
         ///
         /// `GET /audiences/{audienceId}/contacts/{id}`
         pub fn get(
@@ -239,7 +279,7 @@ pub mod resources {
             );
             requests::AudiencesContactsGet { inner }
         }
-        /// Update a contact
+        /// Update a contact in an audience
         ///
         /// `PATCH /audiences/{audienceId}/contacts/{id}`
         pub fn update<B: serde::Serialize + ?Sized>(
@@ -256,6 +296,286 @@ pub mod resources {
             )
             .json(body);
             requests::AudiencesContactsUpdate { inner }
+        }
+    }
+
+    /// The `automations` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Automations<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl Automations<'_> {
+        /// The `automations.runs` operations.
+        pub fn runs(&self) -> AutomationsRuns<'_> {
+            AutomationsRuns {
+                client: self.client,
+            }
+        }
+        /// Create an automation
+        ///
+        /// `POST /automations`
+        ///
+        /// Steps and connections are checked on every write; a draft may be incomplete. With status enabled the whole automation is checked, including that its templates, sender domains, topics and segments exist (422 with each problem and its JSON Pointer). An agent key can only write drafts (403).
+        pub fn create<B: serde::Serialize + ?Sized>(
+            &self,
+            body: &B,
+        ) -> requests::AutomationsCreate {
+            let inner = Request::new(self.client, Method::POST, "/automations", &[]).json(body);
+            requests::AutomationsCreate { inner }
+        }
+        /// Duplicate an automation
+        ///
+        /// `POST /automations/{id}/duplicate`
+        ///
+        /// A new automation named "\<name\> (copy)", disabled, with the same steps and connections.
+        pub fn duplicate(&self, id: impl AsRef<str>) -> requests::AutomationsDuplicate {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/automations/{id}/duplicate",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsDuplicate { inner }
+        }
+        /// Retrieve an automation
+        ///
+        /// `GET /automations/{id}`
+        pub fn get(&self, id: impl AsRef<str>) -> requests::AutomationsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/automations/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsGet { inner }
+        }
+        /// List automations
+        ///
+        /// `GET /automations`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(&self) -> requests::AutomationsList {
+            let inner = Request::new(self.client, Method::GET, "/automations", &[]);
+            requests::AutomationsList { inner }
+        }
+        /// Metrics of an automation
+        ///
+        /// `GET /automations/{id}/metrics`
+        ///
+        /// BillionSend extension. What the statistics store counted for the automation in a period (default the last seven UTC days): runs started, completed, failed and cancelled; the results of the mail it sent; and for every step of the current version the people who entered, finished, failed in and skipped it. Counts follow the sink loop within seconds.
+        pub fn metrics(&self, id: impl AsRef<str>) -> requests::AutomationsMetrics {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/automations/{id}/metrics",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsMetrics { inner }
+        }
+        /// Remove an automation
+        ///
+        /// `DELETE /automations/{id}`
+        ///
+        /// Removes the automation and its versions at once; runs still going are not executed any more, and its run history is deleted in the background.
+        pub fn remove(&self, id: impl AsRef<str>) -> requests::AutomationsRemove {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/automations/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsRemove { inner }
+        }
+        /// Simulate a run of an automation
+        ///
+        /// `POST /automations/{id}/simulate`
+        ///
+        /// BillionSend extension. Works out one contact's pass through the automation's current steps without running anything: which way each step goes, when, and the mail it would send. The clock is the simulation's own: delays and waits move it, so a flow of days answers at once. Waits take the events given, in order. Nothing is sent, stored or counted. Send steps are checked against the published template, the sender domain, the topic, the recipient's opt-outs and the suppression list; the team's send quota, reputation holds and reviews are decided only when mail is really accepted. contact_update changes a copy of the contact for the steps after it. Works on a draft too, if it has a trigger.
+        pub fn simulate<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::AutomationsSimulate {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/automations/{id}/simulate",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::AutomationsSimulate { inner }
+        }
+        /// Stop an automation
+        ///
+        /// `POST /automations/{id}/stop`
+        ///
+        /// Sets the automation to disabled: no new runs start; runs already going finish. Stopping a stopped automation answers the same.
+        pub fn stop(&self, id: impl AsRef<str>) -> requests::AutomationsStop {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/automations/{id}/stop",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsStop { inner }
+        }
+        /// Update an automation
+        ///
+        /// `PATCH /automations/{id}`
+        ///
+        /// Name, status and/or steps with connections. Changing the steps adds a version; runs already going keep the version they started on. An enabled automation's steps cannot change (409): stop it first, or give status disabled in the same request, or duplicate it. Enabling checks the whole automation (422 with each problem and its JSON Pointer); an agent key cannot enable (403).
+        pub fn update<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::AutomationsUpdate {
+            let inner = Request::new(
+                self.client,
+                Method::PATCH,
+                "/automations/{id}",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::AutomationsUpdate { inner }
+        }
+        /// Validate an automation document
+        ///
+        /// `POST /automations/validate`
+        ///
+        /// BillionSend extension. Checks steps and connections without storing anything. Always answers 200 with every problem found: layer draft are the problems that stop a save (the same check as every write), layer enable are what stops enabling (a trigger, reachability, and that the templates, sender domains, topics and segments exist; reported only for a document that can be saved). Each has a JSON Pointer path into the submitted document, a stable code and a suggestion.
+        pub fn validate<B: serde::Serialize + ?Sized>(
+            &self,
+            body: &B,
+        ) -> requests::AutomationsValidate {
+            let inner =
+                Request::new(self.client, Method::POST, "/automations/validate", &[]).json(body);
+            requests::AutomationsValidate { inner }
+        }
+    }
+
+    /// The `automations.runs` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct AutomationsRuns<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl AutomationsRuns<'_> {
+        /// Cancel a run of an automation
+        ///
+        /// `POST /automations/{id}/runs/{run_id}/cancel`
+        ///
+        /// BillionSend extension. Ends a running run as cancelled: its waiting step is skipped and nothing more happens for it. Mail the run already queued is not recalled. A run that is already completed, failed or cancelled answers 409.
+        pub fn cancel(
+            &self,
+            id: impl AsRef<str>,
+            run_id: impl AsRef<str>,
+        ) -> requests::AutomationsRunsCancel {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/automations/{id}/runs/{run_id}/cancel",
+                &[("id", id.as_ref()), ("run_id", run_id.as_ref())],
+            );
+            requests::AutomationsRunsCancel { inner }
+        }
+        /// Retrieve a run of an automation
+        ///
+        /// `GET /automations/{id}/runs/{run_id}`
+        ///
+        /// The run with every step of its automation's version: the steps that ran in the order they ran, with their output and error, then the rest as pending (still reachable) or skipped.
+        pub fn get(
+            &self,
+            id: impl AsRef<str>,
+            run_id: impl AsRef<str>,
+        ) -> requests::AutomationsRunsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/automations/{id}/runs/{run_id}",
+                &[("id", id.as_ref()), ("run_id", run_id.as_ref())],
+            );
+            requests::AutomationsRunsGet { inner }
+        }
+        /// List the runs of an automation
+        ///
+        /// `GET /automations/{id}/runs`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones. status keeps runs in any of the comma-separated statuses (running, completed, failed, cancelled).
+        pub fn list(&self, id: impl AsRef<str>) -> requests::AutomationsRunsList {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/automations/{id}/runs",
+                &[("id", id.as_ref())],
+            );
+            requests::AutomationsRunsList { inner }
+        }
+    }
+
+    /// The `brand` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Brand<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl Brand<'_> {
+        /// The `brand.logo` operations.
+        pub fn logo(&self) -> BrandLogo<'_> {
+            BrandLogo {
+                client: self.client,
+            }
+        }
+        /// Retrieve the brand defaults
+        ///
+        /// `GET /brand`
+        ///
+        /// BillionSend extension. The team's brand defaults for its hosted unsubscribe pages (the dashboard's Settings → Brand): the logo, accent color, font, footer address and the two footer switches. A domain's own `unsubscribe_page` overrides any of them.
+        pub fn get(&self) -> requests::BrandGet {
+            let inner = Request::new(self.client, Method::GET, "/brand", &[]);
+            requests::BrandGet { inner }
+        }
+        /// Update the brand defaults
+        ///
+        /// `PATCH /brand`
+        ///
+        /// BillionSend extension. Changes the team's brand defaults; fields not sent keep their value, null clears one. Needs a key made by an owner or admin (as the dashboard's Brand settings do).
+        pub fn update<B: serde::Serialize + ?Sized>(&self, body: &B) -> requests::BrandUpdate {
+            let inner = Request::new(self.client, Method::PATCH, "/brand", &[]).json(body);
+            requests::BrandUpdate { inner }
+        }
+    }
+
+    /// The `brand.logo` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct BrandLogo<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl BrandLogo<'_> {
+        /// Remove the team logo
+        ///
+        /// `DELETE /brand/logo`
+        ///
+        /// BillionSend extension. Removes the team's logo; pages of domains without a logo of their own then show none. Removing a logo that is not there succeeds. Needs a key made by an owner or admin.
+        pub fn delete(&self) -> requests::BrandLogoDelete {
+            let inner = Request::new(self.client, Method::DELETE, "/brand/logo", &[]);
+            requests::BrandLogoDelete { inner }
+        }
+        /// Upload the team logo
+        ///
+        /// `PUT /brand/logo`
+        ///
+        /// BillionSend extension. Sets the team's logo, the one every domain's unsubscribe page shows unless the domain has its own (PUT /domains/{id}/unsubscribe-page/logo), and the team's picture in the dashboard; it replaces any earlier one. Send the image as `multipart/form-data` in a field named `file`: PNG, JPEG or WebP, judged from the bytes, at most 2 MiB. Needs a key made by an owner or admin.
+        ///
+        /// `file`: The image: PNG, JPEG or WebP (judged from its bytes, not its name or type), at most 2 MiB. SVG is not accepted
+        pub fn upload(&self, file: impl Into<crate::FileUpload>) -> requests::BrandLogoUpload {
+            let inner = Request::new(self.client, Method::PUT, "/brand/logo", &[]).file(
+                "file",
+                file.into(),
+                FileKind::Image,
+            );
+            requests::BrandLogoUpload { inner }
         }
     }
 
@@ -277,6 +597,20 @@ pub mod resources {
                 &[("id", id.as_ref())],
             );
             requests::BroadcastsCancel { inner }
+        }
+        /// List broadcast clicked links
+        ///
+        /// `GET /broadcasts/{id}/clicked-links`
+        ///
+        /// The links recipients clicked in a broadcast, most clicked first, from the statistics (the same counts as `GET /emails/metrics/links`). Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn clicked_links(&self, id: impl AsRef<str>) -> requests::BroadcastsClickedLinks {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/broadcasts/{id}/clicked-links",
+                &[("id", id.as_ref())],
+            );
+            requests::BroadcastsClickedLinks { inner }
         }
         /// Create a broadcast
         ///
@@ -331,6 +665,20 @@ pub mod resources {
         pub fn list(&self) -> requests::BroadcastsList {
             let inner = Request::new(self.client, Method::GET, "/broadcasts", &[]);
             requests::BroadcastsList { inner }
+        }
+        /// List broadcast recipients
+        ///
+        /// `GET /broadcasts/{id}/recipients`
+        ///
+        /// The recipients of a broadcast that had one outcome: `type` (required) is sent, delivered, opened, clicked, bounced, complained, unsubscribed or suppressed. `email` narrows to one address; `bounce_type` (permanent, transient or undetermined) narrows bounces. Read from the delivery records, newest recipient first. Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn recipients(&self, id: impl AsRef<str>) -> requests::BroadcastsRecipients {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/broadcasts/{id}/recipients",
+                &[("id", id.as_ref())],
+            );
+            requests::BroadcastsRecipients { inner }
         }
         /// Send a broadcast
         ///
@@ -451,6 +799,12 @@ pub mod resources {
                 client: self.client,
             }
         }
+        /// The `contacts.imports` operations.
+        pub fn imports(&self) -> ContactsImports<'_> {
+            ContactsImports {
+                client: self.client,
+            }
+        }
         /// The `contacts.segments` operations.
         pub fn segments(&self) -> ContactsSegments<'_> {
             ContactsSegments {
@@ -545,7 +899,7 @@ pub mod resources {
     }
 
     impl ContactsBatch<'_> {
-        /// Create in bulk
+        /// Create contacts in bulk
         ///
         /// `POST /contacts/batch`
         ///
@@ -567,7 +921,7 @@ pub mod resources {
                 Request::new(self.client, Method::POST, "/contacts/batch/get", &[]).json(body);
             requests::ContactsBatchGet { inner }
         }
-        /// Delete in bulk
+        /// Delete contacts in bulk
         ///
         /// `POST /contacts/batch/remove`
         ///
@@ -579,6 +933,54 @@ pub mod resources {
             let inner =
                 Request::new(self.client, Method::POST, "/contacts/batch/remove", &[]).json(body);
             requests::ContactsBatchRemove { inner }
+        }
+    }
+
+    /// The `contacts.imports` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ContactsImports<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl ContactsImports<'_> {
+        /// Create a contact import
+        ///
+        /// `POST /contacts/imports`
+        ///
+        /// Uploads a CSV (`multipart/form-data`; `column_map`, `segments` and `topics` are JSON-encoded strings) and imports it in the background: poll Retrieve a contact import for `status` and `counts`. A row with an invalid address, an address that can never receive mail, or a value that does not fit its column type fails; with the plan's contact cap reached, the rows that do not fit fail. A file that marks a row unsubscribed only opts that contact out; an import never subscribes anyone who unsubscribed. At most 5 imports can be queued or running per team.
+        ///
+        /// `file`: The CSV file: a header row, then one contact per row. At most 20 MiB
+        pub fn create(
+            &self,
+            file: impl Into<crate::FileUpload>,
+        ) -> requests::ContactsImportsCreate {
+            let inner = Request::new(self.client, Method::POST, "/contacts/imports", &[]).file(
+                "file",
+                file.into(),
+                FileKind::Csv,
+            );
+            requests::ContactsImportsCreate { inner }
+        }
+        /// Retrieve a contact import
+        ///
+        /// `GET /contacts/imports/{id}`
+        pub fn get(&self, id: impl AsRef<str>) -> requests::ContactsImportsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/contacts/imports/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::ContactsImportsGet { inner }
+        }
+        /// List contact imports
+        ///
+        /// `GET /contacts/imports`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones. Ten per page unless `limit` says otherwise; `status` filters.
+        pub fn list(&self) -> requests::ContactsImportsList {
+            let inner = Request::new(self.client, Method::GET, "/contacts/imports", &[]);
+            requests::ContactsImportsList { inner }
         }
     }
 
@@ -604,6 +1006,20 @@ pub mod resources {
                 &[("id", id.as_ref()), ("segmentId", segment_id.as_ref())],
             );
             requests::ContactsSegmentsAdd { inner }
+        }
+        /// List contact segments
+        ///
+        /// `GET /contacts/{id}/segments`
+        ///
+        /// The segments the contact is in: an explicit member row, or a match of the segment's saved filter (the rule `GET /segments/{id}/contacts` uses). Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(&self, id: impl AsRef<str>) -> requests::ContactsSegmentsList {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/contacts/{id}/segments",
+                &[("id", id.as_ref())],
+            );
+            requests::ContactsSegmentsList { inner }
         }
         /// Leave a segment
         ///
@@ -671,6 +1087,8 @@ pub mod resources {
         /// Get deliverability
         ///
         /// `GET /deliverability`
+        ///
+        /// The account deliverability score over the last 30 days, its content and outcome parts, your hard bounce and complaint rates, and your standing. BillionSend extension.
         pub fn get(&self) -> requests::DeliverabilityGet {
             let inner = Request::new(self.client, Method::GET, "/deliverability", &[]);
             requests::DeliverabilityGet { inner }
@@ -684,6 +1102,18 @@ pub mod resources {
     }
 
     impl Domains<'_> {
+        /// The `domains.claims` operations.
+        pub fn claims(&self) -> DomainsClaims<'_> {
+            DomainsClaims {
+                client: self.client,
+            }
+        }
+        /// The `domains.unsubscribePage` operations.
+        pub fn unsubscribe_page(&self) -> DomainsUnsubscribePage<'_> {
+            DomainsUnsubscribePage {
+                client: self.client,
+            }
+        }
         /// Create a domain
         ///
         /// `POST /domains`
@@ -755,6 +1185,114 @@ pub mod resources {
         }
     }
 
+    /// The `domains.claims` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct DomainsClaims<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl DomainsClaims<'_> {
+        /// Claim a domain
+        ///
+        /// `POST /domains/claim`
+        ///
+        /// Starts taking over a domain another team already holds (creating it answers 409 "domain already registered"). The response carries a TXT record to publish at the domain; then call Verify Domain Claim. Once the record is seen and the holder's safety checks pass (`blocked_reason`), the holder's domain is removed and the team gets the domain as a new one with its own DKIM key: fetch it with Retrieve Domain under the claim's `domain_id`, publish its records and verify it. Nothing of the holder's data comes with it. A live claim for the same name is returned as it stands; a claim lasts 7 days.
+        pub fn create<B: serde::Serialize + ?Sized>(
+            &self,
+            body: &B,
+        ) -> requests::DomainsClaimsCreate {
+            let inner = Request::new(self.client, Method::POST, "/domains/claim", &[]).json(body);
+            requests::DomainsClaimsCreate { inner }
+        }
+        /// Retrieve a domain claim
+        ///
+        /// `GET /domains/{id}/claim`
+        ///
+        /// The claim for a placeholder domain id, as it stands. Poll it until `status` is `completed`.
+        pub fn get(&self, id: impl AsRef<str>) -> requests::DomainsClaimsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/domains/{id}/claim",
+                &[("id", id.as_ref())],
+            );
+            requests::DomainsClaimsGet { inner }
+        }
+        /// Verify a domain claim
+        ///
+        /// `POST /domains/{id}/claim/verify`
+        ///
+        /// Looks for the TXT record, runs the safety checks and, when they pass, transfers the domain: the answer is the claim as it stands, `completed` when the transfer went through. A claim held back (`blocked`) is looked at again every few minutes by BillionSend; calling again checks at once.
+        pub fn verify(&self, id: impl AsRef<str>) -> requests::DomainsClaimsVerify {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/domains/{id}/claim/verify",
+                &[("id", id.as_ref())],
+            );
+            requests::DomainsClaimsVerify { inner }
+        }
+    }
+
+    /// The `domains.unsubscribePage` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct DomainsUnsubscribePage<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl DomainsUnsubscribePage<'_> {
+        /// The `domains.unsubscribePage.logo` operations.
+        pub fn logo(&self) -> DomainsUnsubscribePageLogo<'_> {
+            DomainsUnsubscribePageLogo {
+                client: self.client,
+            }
+        }
+    }
+
+    /// The `domains.unsubscribePage.logo` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct DomainsUnsubscribePageLogo<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl DomainsUnsubscribePageLogo<'_> {
+        /// Remove a domain's unsubscribe page logo
+        ///
+        /// `DELETE /domains/{id}/unsubscribe-page/logo`
+        ///
+        /// BillionSend extension. Removes this domain's own logo; its unsubscribe pages then show the team's logo (GET /brand), or none. Removing a logo that is not there succeeds.
+        pub fn delete(&self, id: impl AsRef<str>) -> requests::DomainsUnsubscribePageLogoDelete {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/domains/{id}/unsubscribe-page/logo",
+                &[("id", id.as_ref())],
+            );
+            requests::DomainsUnsubscribePageLogoDelete { inner }
+        }
+        /// Upload a domain's unsubscribe page logo
+        ///
+        /// `PUT /domains/{id}/unsubscribe-page/logo`
+        ///
+        /// BillionSend extension. Sets this domain's own logo on its unsubscribe pages, replacing any earlier one; send the image as `multipart/form-data` in a field named `file`. PNG, JPEG or WebP, judged from the bytes, at most 2 MiB. Afterwards `unsubscribe_page.logo_url` on Retrieve a domain returns the new address. A domain without a logo of its own shows the team's (PUT /brand/logo). On a plan without branding (Free) recipients see the built-in look until the team upgrades.
+        ///
+        /// `file`: The image: PNG, JPEG or WebP (judged from its bytes, not its name or type), at most 2 MiB. SVG is not accepted
+        pub fn upload(
+            &self,
+            id: impl AsRef<str>,
+            file: impl Into<crate::FileUpload>,
+        ) -> requests::DomainsUnsubscribePageLogoUpload {
+            let inner = Request::new(
+                self.client,
+                Method::PUT,
+                "/domains/{id}/unsubscribe-page/logo",
+                &[("id", id.as_ref())],
+            )
+            .file("file", file.into(), FileKind::Image);
+            requests::DomainsUnsubscribePageLogoUpload { inner }
+        }
+    }
+
     /// The `emails` operations.
     #[derive(Debug, Clone, Copy)]
     pub struct Emails<'a> {
@@ -762,6 +1300,12 @@ pub mod resources {
     }
 
     impl Emails<'_> {
+        /// The `emails.attachments` operations.
+        pub fn attachments(&self) -> EmailsAttachments<'_> {
+            EmailsAttachments {
+                client: self.client,
+            }
+        }
         /// The `emails.metrics` operations.
         pub fn metrics(&self) -> EmailsMetrics<'_> {
             EmailsMetrics {
@@ -777,6 +1321,8 @@ pub mod resources {
         /// Send a batch of emails
         ///
         /// `POST /emails/batch`
+        ///
+        /// Queue up to 100 emails in one request. With `x-batch-validation: strict` (the default) one invalid email refuses the whole batch; with `permissive` the valid ones are queued and each invalid one is reported by its index.
         pub fn batch<B: serde::Serialize + ?Sized>(&self, body: &B) -> requests::EmailsBatch {
             let inner = Request::new(self.client, Method::POST, "/emails/batch", &[])
                 .json(body)
@@ -822,6 +1368,8 @@ pub mod resources {
         /// Get email insights
         ///
         /// `GET /emails/{id}/insights`
+        ///
+        /// The check results and score for one email. Answers 404 when the email has no insights. BillionSend extension.
         pub fn insights(&self, id: impl AsRef<str>) -> requests::EmailsInsights {
             let inner = Request::new(
                 self.client,
@@ -843,11 +1391,46 @@ pub mod resources {
         /// Send an email
         ///
         /// `POST /emails`
+        ///
+        /// Queue one email for sending, now or at `scheduled_at` (up to 30 days ahead). `to`, `cc` and `bcc` together hold at most 50 recipients. Retry with the same `Idempotency-Key` and payload to get the original answer instead of a second email.
         pub fn send<B: serde::Serialize + ?Sized>(&self, body: &B) -> requests::EmailsSend {
             let inner = Request::new(self.client, Method::POST, "/emails", &[])
                 .json(body)
                 .idempotent();
             requests::EmailsSend { inner }
+        }
+        /// Share an email
+        ///
+        /// `POST /emails/{id}/share`
+        ///
+        /// Creates a public link to view one sent email: its header lines and its body, nothing else about the team or the email (no Bcc, no files to download). The link carries a random token, expires after `expires_in` (48 hours at most, and by default) and can be revoked earlier with `DELETE /emails/{id}/share`. Needs a full access key.
+        pub fn share<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::EmailsShare {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/emails/{id}/share",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::EmailsShare { inner }
+        }
+        /// Revoke an email's share links
+        ///
+        /// `DELETE /emails/{id}/share`
+        ///
+        /// Ends every live share link of one sent email at once. BillionSend extension; the links of other emails are not touched. Needs a full access key.
+        pub fn unshare(&self, id: impl AsRef<str>) -> requests::EmailsUnshare {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/emails/{id}/share",
+                &[("id", id.as_ref())],
+            );
+            requests::EmailsUnshare { inner }
         }
         /// Update an email
         ///
@@ -868,6 +1451,47 @@ pub mod resources {
         }
     }
 
+    /// The `emails.attachments` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct EmailsAttachments<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl EmailsAttachments<'_> {
+        /// Get an attachment
+        ///
+        /// `GET /emails/{email_id}/attachments/{id}`
+        ///
+        /// One attachment's metadata and a signed download link valid for one hour. Needs a full access key.
+        pub fn get(
+            &self,
+            email_id: impl AsRef<str>,
+            id: impl AsRef<str>,
+        ) -> requests::EmailsAttachmentsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/emails/{email_id}/attachments/{id}",
+                &[("email_id", email_id.as_ref()), ("id", id.as_ref())],
+            );
+            requests::EmailsAttachmentsGet { inner }
+        }
+        /// List attachments
+        ///
+        /// `GET /emails/{email_id}/attachments`
+        ///
+        /// The attachments and inline parts of one sent email, each with a signed download link valid for one hour; all of them unless `limit` is given. Needs a full access key. The files come from the email's stored content, so they are gone once the content retention period removed it (the list is then empty).
+        pub fn list(&self, email_id: impl AsRef<str>) -> requests::EmailsAttachmentsList {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/emails/{email_id}/attachments",
+                &[("email_id", email_id.as_ref())],
+            );
+            requests::EmailsAttachmentsList { inner }
+        }
+    }
+
     /// The `emails.metrics` operations.
     #[derive(Debug, Clone, Copy)]
     pub struct EmailsMetrics<'a> {
@@ -878,6 +1502,8 @@ pub mod resources {
         /// Get email metrics
         ///
         /// `GET /emails/metrics`
+        ///
+        /// Delivery statistics for a date range, by period, domain, email or broadcast: counts and rates for sent, delivered, bounced, complained, opened and clicked. Needs a full access key.
         pub fn get(&self) -> requests::EmailsMetrics {
             let inner = Request::new(self.client, Method::GET, "/emails/metrics", &[]);
             requests::EmailsMetrics { inner }
@@ -885,6 +1511,8 @@ pub mod resources {
         /// Get opens by mail client
         ///
         /// `GET /emails/metrics/clients`
+        ///
+        /// Opens in a date range by the mail client that fetched the images. Needs a full access key.
         pub fn clients(&self) -> requests::EmailsMetricsClients {
             let inner = Request::new(self.client, Method::GET, "/emails/metrics/clients", &[]);
             requests::EmailsMetricsClients { inner }
@@ -892,6 +1520,8 @@ pub mod resources {
         /// Get opens and clicks by country
         ///
         /// `GET /emails/metrics/countries`
+        ///
+        /// Opens and clicks in a date range by the reader's country, with people and machines counted apart. Needs a full access key.
         pub fn countries(&self) -> requests::EmailsMetricsCountries {
             let inner = Request::new(self.client, Method::GET, "/emails/metrics/countries", &[]);
             requests::EmailsMetricsCountries { inner }
@@ -899,6 +1529,8 @@ pub mod resources {
         /// Get clicks by link
         ///
         /// `GET /emails/metrics/links`
+        ///
+        /// Clicks in a date range by the link that was clicked, with people and machines counted apart. Needs a full access key.
         pub fn links(&self) -> requests::EmailsMetricsLinks {
             let inner = Request::new(self.client, Method::GET, "/emails/metrics/links", &[]);
             requests::EmailsMetricsLinks { inner }
@@ -922,7 +1554,7 @@ pub mod resources {
         ///
         /// `DELETE /emails/receiving/{id}`
         ///
-        /// BillionSend extension: erases one received email now, its sealed content, inbox memberships and received secrets with it, and threads it leaves empty. Needs a full access key that is not scoped to an inbox; for an MCP token, the owner or admin role. Webhook payloads already sent keep their metadata until the payload retention strips them.
+        /// BillionSend extension: erases one received email now, its sealed content, inbox memberships and received secrets with it, and threads it leaves empty. Needs a full access key that is not scoped to an inbox, from an owner, admin or developer. Webhook payloads already sent keep their metadata until the payload retention strips them.
         pub fn delete(&self, id: impl AsRef<str>) -> requests::EmailsReceivingDelete {
             let inner = Request::new(
                 self.client,
@@ -970,7 +1602,7 @@ pub mod resources {
         ///
         /// `GET /emails/receiving`
         ///
-        /// Mail received at the team's receiving domains and inboxes, newest first (`after` pages toward older mail), with cursor pagination. Needs a full access key; a domain-scoped key lists mail addressed to its domain only, an inbox-scoped key mail delivered into its inbox. Mail held for screening or in quarantine is left out unless a full access key asks for it (include_quarantined, quarantined). With wait, the request is held until matching mail arrives (long-poll). An inbox_id the key can't reach answers 404 at once, without waiting; an inbox-scoped key naming another inbox gets 403 restricted_api_key. Everything in a received email was written by whoever sent it, so its HTML is safe to show only in a sandbox.
+        /// Mail received at the team's receiving domains and inboxes, newest first (`after` pages toward older mail), with cursor pagination. Needs a full access key; a domain-scoped key lists mail addressed to its domain only, an inbox-scoped key mail delivered into its inbox. Mail held for screening or in quarantine is left out unless a full access key asks for it (include_quarantined, quarantined). With wait, the request is held until matching mail arrives (long-poll). The inbox_id filter takes an inbox ID or its email address, as the /inboxes/{inbox_id} paths do. An inbox the key can't reach answers 404 at once, without waiting; an inbox-scoped key naming another inbox gets 403 restricted_api_key. Everything in a received email was written by whoever sent it, so its HTML is safe to show only in a sandbox.
         pub fn list(&self) -> requests::EmailsReceivingList {
             let inner = Request::new(self.client, Method::GET, "/emails/receiving", &[]);
             requests::EmailsReceivingList { inner }
@@ -1053,6 +1685,91 @@ pub mod resources {
                 &[("email_id", email_id.as_ref()), ("id", id.as_ref())],
             );
             requests::EmailsReceivingAttachmentsText { inner }
+        }
+    }
+
+    /// The `events` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Events<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl Events<'_> {
+        /// Create an event
+        ///
+        /// `POST /events`
+        ///
+        /// Defines a custom event: its name and, optionally, a payload schema (a flat map from key to string, number, boolean or date). The definition is only used to check the payload of `events.send`; automations match an event by name whether or not it is defined.
+        pub fn create<B: serde::Serialize + ?Sized>(&self, body: &B) -> requests::EventsCreate {
+            let inner = Request::new(self.client, Method::POST, "/events", &[]).json(body);
+            requests::EventsCreate { inner }
+        }
+        /// Retrieve an event
+        ///
+        /// `GET /events/{id_or_name}`
+        ///
+        /// By id or by name. A name with `/`, `%` or spaces goes through the path URL-encoded.
+        pub fn get(&self, id_or_name: impl AsRef<str>) -> requests::EventsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/events/{id_or_name}",
+                &[("id_or_name", id_or_name.as_ref())],
+            );
+            requests::EventsGet { inner }
+        }
+        /// List events
+        ///
+        /// `GET /events`
+        ///
+        /// The team's event definitions. Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(&self) -> requests::EventsList {
+            let inner = Request::new(self.client, Method::GET, "/events", &[]);
+            requests::EventsList { inner }
+        }
+        /// Delete an event
+        ///
+        /// `DELETE /events/{id_or_name}`
+        ///
+        /// Removes the definition, and with it the payload check. Automations match by name, so they are not affected, and the name can still be sent.
+        pub fn remove(&self, id_or_name: impl AsRef<str>) -> requests::EventsRemove {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/events/{id_or_name}",
+                &[("id_or_name", id_or_name.as_ref())],
+            );
+            requests::EventsRemove { inner }
+        }
+        /// Send an event
+        ///
+        /// `POST /events/send`
+        ///
+        /// Records an event for a contact, given by `contact_id` or by `email` (exactly one). Every enabled automation whose trigger is this event name starts a run for the contact, and runs waiting for this event continue. The event is accepted whether or not it is defined or any automation matches; when it is defined with a schema, the payload is checked against it and each typed value is converted. A contact that does not exist yet is created when an automation needs it. Retry with the same `Idempotency-Key` and the same body to get the original answer instead of a second event.
+        pub fn send<B: serde::Serialize + ?Sized>(&self, body: &B) -> requests::EventsSend {
+            let inner = Request::new(self.client, Method::POST, "/events/send", &[])
+                .json(body)
+                .idempotent();
+            requests::EventsSend { inner }
+        }
+        /// Update an event
+        ///
+        /// `PATCH /events/{id_or_name}`
+        ///
+        /// Replaces the payload schema; `null` clears it. The name cannot change. Runs already started are not affected: the schema is read only when an event is sent.
+        pub fn update<B: serde::Serialize + ?Sized>(
+            &self,
+            id_or_name: impl AsRef<str>,
+            body: &B,
+        ) -> requests::EventsUpdate {
+            let inner = Request::new(
+                self.client,
+                Method::PATCH,
+                "/events/{id_or_name}",
+                &[("id_or_name", id_or_name.as_ref())],
+            )
+            .json(body);
+            requests::EventsUpdate { inner }
         }
     }
 
@@ -1209,7 +1926,7 @@ pub mod resources {
         ///
         /// `GET /inboxes/{inbox_id}/agent`
         ///
-        /// Hosted-agent settings. BillionSend runs no agent of its own, so an inbox never has one.
+        /// The instructions, tone and allowed actions saved for this inbox's agent; empty until a first update. BillionSend stores these settings and runs no agent of its own: your own agent reads them (an inbox-scoped key can read its inbox's) and acts on the inbox through the API or MCP.
         pub fn get(&self, inbox_id: impl AsRef<str>) -> requests::InboxesAgentGet {
             let inner = Request::new(
                 self.client,
@@ -1218,6 +1935,25 @@ pub mod resources {
                 &[("inbox_id", inbox_id.as_ref())],
             );
             requests::InboxesAgentGet { inner }
+        }
+        /// Update agent settings
+        ///
+        /// `PATCH /inboxes/{inbox_id}/agent`
+        ///
+        /// Saves the instructions, tone and allowed actions of this inbox's agent. Send at least one field; a field left out keeps its value, `null` clears instructions or tone, and `actions` replaces the list. BillionSend stores these settings and runs no agent of its own: your own agent reads them (an inbox-scoped key can read its inbox's) and acts on the inbox through the API or MCP. Needs a developer role; an inbox-scoped key cannot change them.
+        pub fn update<B: serde::Serialize + ?Sized>(
+            &self,
+            inbox_id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::InboxesAgentUpdate {
+            let inner = Request::new(
+                self.client,
+                Method::PATCH,
+                "/inboxes/{inbox_id}/agent",
+                &[("inbox_id", inbox_id.as_ref())],
+            )
+            .json(body);
+            requests::InboxesAgentUpdate { inner }
         }
     }
 
@@ -1351,7 +2087,7 @@ pub mod resources {
         ///
         /// `POST /inboxes/{inbox_id}/drafts/{draft_id}/send`
         ///
-        /// Sends the draft from the inbox address; the body is optional and only ever holds `headers`, which are not supported yet (an empty value is fine), and an `Idempotency-Key` is accepted. Answers the sent email's id. A draft waiting for approval goes out only when a person or a team-wide full access key sends it (403 approval_required otherwise), and their send skips the inbox's rules but never the team's limits or the shared domain's rules. An agent's send of a draft runs the rules and may hold it (202).
+        /// Sends the draft from the inbox address; the body is optional and only ever holds `headers`, which are not supported (an empty value is fine), and an `Idempotency-Key` is accepted. Answers the sent email's id. A draft waiting for approval goes out only when a person or a team-wide full access key sends it (403 approval_required otherwise), and their send skips the inbox's rules but never the team's limits or the shared domain's rules. An agent's send of a draft runs the rules and may hold it (202).
         pub fn send<B: serde::Serialize + ?Sized>(
             &self,
             inbox_id: impl AsRef<str>,
@@ -1419,7 +2155,7 @@ pub mod resources {
         ///
         /// `GET /inboxes/{inbox_id}/events`
         ///
-        /// BillionSend extension: the event stream of one inbox, as GET /inboxes/events, ending when the inbox is deleted or expires. An inbox-scoped key may stream its own inbox, without the events about held mail.
+        /// BillionSend extension: the event stream of one inbox, as GET /inboxes/events, ending when the inbox is deleted or expires; it carries inbox.deleted and inbox.expired whatever types names. An inbox-scoped key may stream its own inbox, without the events about held mail.
         pub fn stream_inbox(
             &self,
             inbox_id: impl AsRef<str>,
@@ -1906,6 +2642,70 @@ pub mod resources {
         }
     }
 
+    /// The `logs` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Logs<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl Logs<'_> {
+        /// Retrieve a log
+        ///
+        /// `GET /logs/{id}`
+        ///
+        /// One logged request with its JSON request and response bodies. Bodies were redacted when stored: html, text and attachment data are size markers, tokens and secrets are `[redacted]`. A caller acting as a person whose role lacks developer access gets null bodies; an API key always gets them.
+        pub fn get(&self, id: impl AsRef<str>) -> requests::LogsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/logs/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::LogsGet { inner }
+        }
+        /// List request logs
+        ///
+        /// `GET /logs`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones. Every authenticated request the team's keys and connected apps made, this one included; the bodies come with Retrieve a log.
+        pub fn list(&self) -> requests::LogsList {
+            let inner = Request::new(self.client, Method::GET, "/logs", &[]);
+            requests::LogsList { inner }
+        }
+    }
+
+    /// The `oauthGrants` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct OauthGrants<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl OauthGrants<'_> {
+        /// List OAuth grants
+        ///
+        /// `GET /oauth/grants`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones. The apps connected to the team, MCP clients among them, that hold a grant in force.
+        pub fn list(&self) -> requests::OauthGrantsList {
+            let inner = Request::new(self.client, Method::GET, "/oauth/grants", &[]);
+            requests::OauthGrantsList { inner }
+        }
+        /// Revoke an OAuth grant
+        ///
+        /// `DELETE /oauth/grants/{id}`
+        ///
+        /// Ends the grant with every token issued under it: access tokens stop working at once and the app has to ask for consent again. The grant's holder may revoke it; otherwise the caller needs owner or admin access, and an all-teams grant needs admin access to every team its holder belongs to. The grant is deleted, so it is not listed afterwards.
+        pub fn revoke(&self, id: impl AsRef<str>) -> requests::OauthGrantsRevoke {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/oauth/grants/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::OauthGrantsRevoke { inner }
+        }
+    }
+
     /// The `segments` operations.
     #[derive(Debug, Clone, Copy)]
     pub struct Segments<'a> {
@@ -2066,7 +2866,7 @@ pub mod resources {
     }
 
     impl SuppressionsBatch<'_> {
-        /// Add in bulk
+        /// Add suppressions in bulk
         ///
         /// `POST /suppressions/batch/add`
         pub fn add<B: serde::Serialize + ?Sized>(
@@ -2077,7 +2877,7 @@ pub mod resources {
                 Request::new(self.client, Method::POST, "/suppressions/batch/add", &[]).json(body);
             requests::SuppressionsBatchAdd { inner }
         }
-        /// Remove in bulk
+        /// Remove suppressions in bulk
         ///
         /// `POST /suppressions/batch/remove`
         pub fn remove<B: serde::Serialize + ?Sized>(
@@ -2261,18 +3061,6 @@ pub mod resources {
             let inner = Request::new(self.client, Method::POST, "/unsubscribes", &[]).json(body);
             requests::UnsubscribesCreate { inner }
         }
-        /// Delete an unsubscribe
-        ///
-        /// `DELETE /unsubscribes/{id}`
-        pub fn delete(&self, id: impl AsRef<str>) -> requests::UnsubscribesDelete {
-            let inner = Request::new(
-                self.client,
-                Method::DELETE,
-                "/unsubscribes/{id}",
-                &[("id", id.as_ref())],
-            );
-            requests::UnsubscribesDelete { inner }
-        }
         /// List unsubscribes
         ///
         /// `GET /unsubscribes`
@@ -2294,6 +3082,8 @@ pub mod resources {
         /// Get usage
         ///
         /// `GET /usage`
+        ///
+        /// What the team uses against what its plan allows: emails (the UTC day and the billing period), contacts, segments, broadcasts, domains and the API rate limit. BillionSend adds `plan`, `inboxes`, `webhook_endpoints`, `verification` and the period's overage fields. A limit nothing caps is null.
         pub fn get(&self) -> requests::UsageGet {
             let inner = Request::new(self.client, Method::GET, "/usage", &[]);
             requests::UsageGet { inner }
@@ -2369,6 +3159,12 @@ pub mod resources {
     }
 
     impl Webhooks<'_> {
+        /// The `webhooks.events` operations.
+        pub fn events(&self) -> WebhooksEvents<'_> {
+            WebhooksEvents {
+                client: self.client,
+            }
+        }
         /// Create a webhook
         ///
         /// `POST /webhooks`
@@ -2411,22 +3207,22 @@ pub mod resources {
         }
         /// Rotate signing secret
         ///
-        /// `POST /webhooks/{id}/rotate`
+        /// `POST /webhooks/{id}/signing-secret/rotate`
         ///
         /// BillionSend extension. Mints a new signing secret (or takes the one in signing_secret) and returns it. For overlap_hours the previous secret keeps signing too: every delivery in that window carries both signatures, space-separated in webhook-signature, so the receiver can switch at any point without a gap. A second rotation inside the window replaces the previous secret.
-        pub fn rotate<B: serde::Serialize + ?Sized>(
+        pub fn rotate_signing_secret<B: serde::Serialize + ?Sized>(
             &self,
             id: impl AsRef<str>,
             body: &B,
-        ) -> requests::WebhooksRotate {
+        ) -> requests::WebhooksRotateSigningSecret {
             let inner = Request::new(
                 self.client,
                 Method::POST,
-                "/webhooks/{id}/rotate",
+                "/webhooks/{id}/signing-secret/rotate",
                 &[("id", id.as_ref())],
             )
             .json(body);
-            requests::WebhooksRotate { inner }
+            requests::WebhooksRotateSigningSecret { inner }
         }
         /// Update a webhook
         ///
@@ -2444,6 +3240,96 @@ pub mod resources {
             )
             .json(body);
             requests::WebhooksUpdate { inner }
+        }
+    }
+
+    /// The `webhooks.events` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct WebhooksEvents<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl WebhooksEvents<'_> {
+        /// The `webhooks.events.attempts` operations.
+        pub fn attempts(&self) -> WebhooksEventsAttempts<'_> {
+            WebhooksEventsAttempts {
+                client: self.client,
+            }
+        }
+        /// Retrieve a webhook event
+        ///
+        /// `GET /webhooks/{id}/events/{event_id}`
+        pub fn get(
+            &self,
+            id: impl AsRef<str>,
+            event_id: impl AsRef<str>,
+        ) -> requests::WebhooksEventsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/webhooks/{id}/events/{event_id}",
+                &[("id", id.as_ref()), ("event_id", event_id.as_ref())],
+            );
+            requests::WebhooksEventsGet { inner }
+        }
+        /// List a webhook's events
+        ///
+        /// `GET /webhooks/{id}/events`
+        ///
+        /// Every event the webhook was sent or is waiting to be sent, newest first. Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(&self, id: impl AsRef<str>) -> requests::WebhooksEventsList {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/webhooks/{id}/events",
+                &[("id", id.as_ref())],
+            );
+            requests::WebhooksEventsList { inner }
+        }
+        /// Replay a webhook event
+        ///
+        /// `POST /webhooks/{id}/events/{event_id}/replay`
+        ///
+        /// Posts the event again: a new event with the same payload and the same webhook-id, queued like any other (signed, paced and retried the usual way). Returns the new event. Refused with 422 for a webhook that is disabled and for an event whose payload the retention window has emptied.
+        pub fn replay(
+            &self,
+            id: impl AsRef<str>,
+            event_id: impl AsRef<str>,
+        ) -> requests::WebhooksEventsReplay {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/webhooks/{id}/events/{event_id}/replay",
+                &[("id", id.as_ref()), ("event_id", event_id.as_ref())],
+            );
+            requests::WebhooksEventsReplay { inner }
+        }
+    }
+
+    /// The `webhooks.events.attempts` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct WebhooksEventsAttempts<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl WebhooksEventsAttempts<'_> {
+        /// List an event's delivery attempts
+        ///
+        /// `GET /webhooks/{id}/events/{event_id}/attempts`
+        ///
+        /// Every post made for the event, newest first. Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(
+            &self,
+            id: impl AsRef<str>,
+            event_id: impl AsRef<str>,
+        ) -> requests::WebhooksEventsAttemptsList {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/webhooks/{id}/events/{event_id}/attempts",
+                &[("id", id.as_ref()), ("event_id", event_id.as_ref())],
+            );
+            requests::WebhooksEventsAttemptsList { inner }
         }
     }
 }
@@ -2544,6 +3430,16 @@ pub mod requests {
     request_builder!(ApiKeysList);
     paginated_builder!(ApiKeysList);
 
+    /// The request of [`apiKeys.update`](crate::resources::ApiKeys::update): `PATCH /api-keys/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct ApiKeysUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(ApiKeysUpdate);
+
     /// The request of [`audiences.contacts.create`](crate::resources::AudiencesContacts::create): `POST /audiences/{audienceId}/contacts`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -2593,6 +3489,252 @@ pub mod requests {
     }
     request_builder!(AudiencesContactsUpdate);
 
+    /// The request of [`automations.create`](crate::resources::Automations::create): `POST /automations`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsCreate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsCreate);
+
+    /// The request of [`automations.duplicate`](crate::resources::Automations::duplicate): `POST /automations/{id}/duplicate`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsDuplicate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsDuplicate);
+
+    /// The request of [`automations.get`](crate::resources::Automations::get): `GET /automations/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsGet);
+
+    /// The request of [`automations.list`](crate::resources::Automations::list): `GET /automations`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsList {
+        pub(crate) inner: Request,
+    }
+    impl AutomationsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+        /// The `status` query parameter.
+        pub fn status(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("status", value.into());
+            self
+        }
+    }
+    request_builder!(AutomationsList);
+    paginated_builder!(AutomationsList);
+
+    /// The request of [`automations.metrics`](crate::resources::Automations::metrics): `GET /automations/{id}/metrics`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsMetrics {
+        pub(crate) inner: Request,
+    }
+    impl AutomationsMetrics {
+        /// Default: seven UTC days before end_date
+        ///
+        /// The `start_date` query parameter.
+        pub fn start_date(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("start_date", value.into());
+            self
+        }
+        /// Default now; a date alone means the end of that UTC day
+        ///
+        /// The `end_date` query parameter.
+        pub fn end_date(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("end_date", value.into());
+            self
+        }
+    }
+    request_builder!(AutomationsMetrics);
+
+    /// The request of [`automations.remove`](crate::resources::Automations::remove): `DELETE /automations/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsRemove {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsRemove);
+
+    /// The request of [`automations.runs.cancel`](crate::resources::AutomationsRuns::cancel): `POST /automations/{id}/runs/{run_id}/cancel`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsRunsCancel {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsRunsCancel);
+
+    /// The request of [`automations.runs.get`](crate::resources::AutomationsRuns::get): `GET /automations/{id}/runs/{run_id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsRunsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsRunsGet);
+
+    /// The request of [`automations.runs.list`](crate::resources::AutomationsRuns::list): `GET /automations/{id}/runs`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsRunsList {
+        pub(crate) inner: Request,
+    }
+    impl AutomationsRunsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+        /// Run statuses to keep, comma-separated: running, completed, failed, cancelled
+        ///
+        /// The `status` query parameter.
+        pub fn status(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("status", value.into());
+            self
+        }
+    }
+    request_builder!(AutomationsRunsList);
+    paginated_builder!(AutomationsRunsList);
+
+    /// The request of [`automations.simulate`](crate::resources::Automations::simulate): `POST /automations/{id}/simulate`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsSimulate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsSimulate);
+
+    /// The request of [`automations.stop`](crate::resources::Automations::stop): `POST /automations/{id}/stop`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsStop {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsStop);
+
+    /// The request of [`automations.update`](crate::resources::Automations::update): `PATCH /automations/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsUpdate);
+
+    /// The request of [`automations.validate`](crate::resources::Automations::validate): `POST /automations/validate`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct AutomationsValidate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(AutomationsValidate);
+
+    /// The request of [`brand.get`](crate::resources::Brand::get): `GET /brand`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BrandGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BrandGet);
+
+    /// The request of [`brand.logo.delete`](crate::resources::BrandLogo::delete): `DELETE /brand/logo`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BrandLogoDelete {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BrandLogoDelete);
+
+    /// The request of [`brand.logo.upload`](crate::resources::BrandLogo::upload): `PUT /brand/logo`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BrandLogoUpload {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BrandLogoUpload);
+
+    /// The request of [`brand.update`](crate::resources::Brand::update): `PATCH /brand`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BrandUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BrandUpdate);
+
     /// The request of [`broadcasts.cancel`](crate::resources::Broadcasts::cancel): `POST /broadcasts/{id}/cancel`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -2602,6 +3744,40 @@ pub mod requests {
         pub(crate) inner: Request,
     }
     request_builder!(BroadcastsCancel);
+
+    /// The request of [`broadcasts.clickedLinks`](crate::resources::Broadcasts::clicked_links): `GET /broadcasts/{id}/clicked-links`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastsClickedLinks {
+        pub(crate) inner: Request,
+    }
+    impl BroadcastsClickedLinks {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(BroadcastsClickedLinks);
+    paginated_builder!(BroadcastsClickedLinks);
 
     /// The request of [`broadcasts.create`](crate::resources::Broadcasts::create): `POST /broadcasts`.
     ///
@@ -2676,6 +3852,61 @@ pub mod requests {
     }
     request_builder!(BroadcastsList);
     paginated_builder!(BroadcastsList);
+
+    /// The request of [`broadcasts.recipients`](crate::resources::Broadcasts::recipients): `GET /broadcasts/{id}/recipients`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastsRecipients {
+        pub(crate) inner: Request,
+    }
+    impl BroadcastsRecipients {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+        /// The outcome to list recipients of; one `email_events` type
+        ///
+        /// The `type` query parameter. Required.
+        pub fn r#type(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("type", value.into());
+            self
+        }
+        /// Only the recipient with this address (matched without regard to case)
+        ///
+        /// The `email` query parameter.
+        pub fn email(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("email", value.into());
+            self
+        }
+        /// Only bounces of this class; allowed only with type=bounced
+        ///
+        /// The `bounce_type` query parameter.
+        pub fn bounce_type(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("bounce_type", value.into());
+            self
+        }
+    }
+    request_builder!(BroadcastsRecipients);
+    paginated_builder!(BroadcastsRecipients);
 
     /// The request of [`broadcasts.send`](crate::resources::Broadcasts::send): `POST /broadcasts/{id}/send`.
     ///
@@ -2854,6 +4085,94 @@ pub mod requests {
     }
     request_builder!(ContactsGet);
 
+    /// The request of [`contacts.imports.create`](crate::resources::ContactsImports::create): `POST /contacts/imports`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct ContactsImportsCreate {
+        pub(crate) inner: Request,
+    }
+    impl ContactsImportsCreate {
+        /// JSON-encoded object, see the column map fields
+        ///
+        /// The `column_map` form field.
+        /// A string is sent as it is (already JSON); anything else is encoded.
+        pub fn column_map<T: serde::Serialize + ?Sized>(mut self, value: &T) -> Self {
+            self.inner.set_json_field("column_map", value);
+            self
+        }
+        /// What to do with an address the team already has: `upsert` (default) updates it from the file, `skip` leaves it alone
+        ///
+        /// The `on_conflict` form field.
+        pub fn on_conflict(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_field("on_conflict", value.into());
+            self
+        }
+        /// JSON-encoded array of segments every imported contact joins
+        ///
+        /// The `segments` form field.
+        /// A string is sent as it is (already JSON); anything else is encoded.
+        pub fn segments<T: serde::Serialize + ?Sized>(mut self, value: &T) -> Self {
+            self.inner.set_json_field("segments", value);
+            self
+        }
+        /// JSON-encoded array of topic subscriptions to set for every imported contact
+        ///
+        /// The `topics` form field.
+        /// A string is sent as it is (already JSON); anything else is encoded.
+        pub fn topics<T: serde::Serialize + ?Sized>(mut self, value: &T) -> Self {
+            self.inner.set_json_field("topics", value);
+            self
+        }
+    }
+    request_builder!(ContactsImportsCreate);
+
+    /// The request of [`contacts.imports.get`](crate::resources::ContactsImports::get): `GET /contacts/imports/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct ContactsImportsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(ContactsImportsGet);
+
+    /// The request of [`contacts.imports.list`](crate::resources::ContactsImports::list): `GET /contacts/imports`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct ContactsImportsList {
+        pub(crate) inner: Request,
+    }
+    impl ContactsImportsList {
+        /// Page size, 1-100 (default 10)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+        /// The `status` query parameter.
+        pub fn status(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("status", value.into());
+            self
+        }
+    }
+    request_builder!(ContactsImportsList);
+    paginated_builder!(ContactsImportsList);
+
     /// The request of [`contacts.list`](crate::resources::Contacts::list): `GET /contacts`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -2915,6 +4234,40 @@ pub mod requests {
     }
     request_builder!(ContactsSegmentsAdd);
 
+    /// The request of [`contacts.segments.list`](crate::resources::ContactsSegments::list): `GET /contacts/{id}/segments`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct ContactsSegmentsList {
+        pub(crate) inner: Request,
+    }
+    impl ContactsSegmentsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(ContactsSegmentsList);
+    paginated_builder!(ContactsSegmentsList);
+
     /// The request of [`contacts.segments.remove`](crate::resources::ContactsSegments::remove): `DELETE /contacts/{id}/segments/{segmentId}`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -2964,6 +4317,36 @@ pub mod requests {
         pub(crate) inner: Request,
     }
     request_builder!(DeliverabilityGet);
+
+    /// The request of [`domains.claims.create`](crate::resources::DomainsClaims::create): `POST /domains/claim`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct DomainsClaimsCreate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(DomainsClaimsCreate);
+
+    /// The request of [`domains.claims.get`](crate::resources::DomainsClaims::get): `GET /domains/{id}/claim`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct DomainsClaimsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(DomainsClaimsGet);
+
+    /// The request of [`domains.claims.verify`](crate::resources::DomainsClaims::verify): `POST /domains/{id}/claim/verify`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct DomainsClaimsVerify {
+        pub(crate) inner: Request,
+    }
+    request_builder!(DomainsClaimsVerify);
 
     /// The request of [`domains.create`](crate::resources::Domains::create): `POST /domains`.
     ///
@@ -3029,6 +4412,26 @@ pub mod requests {
     request_builder!(DomainsList);
     paginated_builder!(DomainsList);
 
+    /// The request of [`domains.unsubscribePage.logo.delete`](crate::resources::DomainsUnsubscribePageLogo::delete): `DELETE /domains/{id}/unsubscribe-page/logo`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct DomainsUnsubscribePageLogoDelete {
+        pub(crate) inner: Request,
+    }
+    request_builder!(DomainsUnsubscribePageLogoDelete);
+
+    /// The request of [`domains.unsubscribePage.logo.upload`](crate::resources::DomainsUnsubscribePageLogo::upload): `PUT /domains/{id}/unsubscribe-page/logo`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct DomainsUnsubscribePageLogoUpload {
+        pub(crate) inner: Request,
+    }
+    request_builder!(DomainsUnsubscribePageLogoUpload);
+
     /// The request of [`domains.update`](crate::resources::Domains::update): `PATCH /domains/{id}`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -3048,6 +4451,50 @@ pub mod requests {
         pub(crate) inner: Request,
     }
     request_builder!(DomainsVerify);
+
+    /// The request of [`emails.attachments.get`](crate::resources::EmailsAttachments::get): `GET /emails/{email_id}/attachments/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EmailsAttachmentsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EmailsAttachmentsGet);
+
+    /// The request of [`emails.attachments.list`](crate::resources::EmailsAttachments::list): `GET /emails/{email_id}/attachments`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EmailsAttachmentsList {
+        pub(crate) inner: Request,
+    }
+    impl EmailsAttachmentsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(EmailsAttachmentsList);
+    paginated_builder!(EmailsAttachmentsList);
 
     /// The request of [`emails.batch`](crate::resources::Emails::batch): `POST /emails/batch`.
     ///
@@ -3476,14 +4923,14 @@ pub mod requests {
             self.inner.set_query("wait", value.to_string());
             self
         }
-        /// BillionSend extension: only mail received after this instant; with wait and no cursor it defaults to one minute before the request
+        /// BillionSend extension: only mail received after this instant; with wait it means mail that became visible after it (delivered, or released from screening), and with no cursor it defaults to one minute before the request
         ///
         /// The `since` query parameter.
         pub fn since(mut self, value: impl Into<String>) -> Self {
             self.inner.set_query("since", value.into());
             self
         }
-        /// BillionSend extension: only mail delivered into this inbox
+        /// BillionSend extension: only mail delivered into this inbox, by inbox ID or email address (as in the /inboxes/{inbox_id} paths)
         ///
         /// The `inbox_id` query parameter.
         pub fn inbox_id(mut self, value: impl Into<String>) -> Self {
@@ -3558,6 +5005,26 @@ pub mod requests {
     request_builder!(EmailsSend);
     idempotent_builder!(EmailsSend);
 
+    /// The request of [`emails.share`](crate::resources::Emails::share): `POST /emails/{id}/share`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EmailsShare {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EmailsShare);
+
+    /// The request of [`emails.unshare`](crate::resources::Emails::unshare): `DELETE /emails/{id}/share`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EmailsUnshare {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EmailsUnshare);
+
     /// The request of [`emails.update`](crate::resources::Emails::update): `PATCH /emails/{id}`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -3568,6 +5035,91 @@ pub mod requests {
     }
     request_builder!(EmailsUpdate);
 
+    /// The request of [`events.create`](crate::resources::Events::create): `POST /events`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsCreate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EventsCreate);
+
+    /// The request of [`events.get`](crate::resources::Events::get): `GET /events/{id_or_name}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EventsGet);
+
+    /// The request of [`events.list`](crate::resources::Events::list): `GET /events`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsList {
+        pub(crate) inner: Request,
+    }
+    impl EventsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(EventsList);
+    paginated_builder!(EventsList);
+
+    /// The request of [`events.remove`](crate::resources::Events::remove): `DELETE /events/{id_or_name}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsRemove {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EventsRemove);
+
+    /// The request of [`events.send`](crate::resources::Events::send): `POST /events/send`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsSend {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EventsSend);
+    idempotent_builder!(EventsSend);
+
+    /// The request of [`events.update`](crate::resources::Events::update): `PATCH /events/{id_or_name}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct EventsUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(EventsUpdate);
+
     /// The request of [`inboxes.agent.get`](crate::resources::InboxesAgent::get): `GET /inboxes/{inbox_id}/agent`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -3577,6 +5129,16 @@ pub mod requests {
         pub(crate) inner: Request,
     }
     request_builder!(InboxesAgentGet);
+
+    /// The request of [`inboxes.agent.update`](crate::resources::InboxesAgent::update): `PATCH /inboxes/{inbox_id}/agent`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct InboxesAgentUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(InboxesAgentUpdate);
 
     /// The request of [`inboxes.codes.latest`](crate::resources::InboxesCodes::latest): `GET /inboxes/{inbox_id}/codes/latest`.
     ///
@@ -4275,6 +5837,94 @@ pub mod requests {
     }
     request_builder!(InboxesUpdate);
 
+    /// The request of [`logs.get`](crate::resources::Logs::get): `GET /logs/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct LogsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(LogsGet);
+
+    /// The request of [`logs.list`](crate::resources::Logs::list): `GET /logs`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct LogsList {
+        pub(crate) inner: Request,
+    }
+    impl LogsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(LogsList);
+    paginated_builder!(LogsList);
+
+    /// The request of [`oauthGrants.list`](crate::resources::OauthGrants::list): `GET /oauth/grants`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct OauthGrantsList {
+        pub(crate) inner: Request,
+    }
+    impl OauthGrantsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(OauthGrantsList);
+    paginated_builder!(OauthGrantsList);
+
+    /// The request of [`oauthGrants.revoke`](crate::resources::OauthGrants::revoke): `DELETE /oauth/grants/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct OauthGrantsRevoke {
+        pub(crate) inner: Request,
+    }
+    request_builder!(OauthGrantsRevoke);
+
     /// The request of [`segments.contacts.list`](crate::resources::SegmentsContacts::list): `GET /segments/{id}/contacts`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -4477,6 +6127,13 @@ pub mod requests {
             self.inner.set_query("origin", value.into());
             self
         }
+        /// BillionSend extension. email (default): entries for single addresses; domain: entries for a whole domain; all: both
+        ///
+        /// The `kind` query parameter.
+        pub fn kind(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("kind", value.into());
+            self
+        }
     }
     request_builder!(SuppressionsList);
     paginated_builder!(SuppressionsList);
@@ -4635,16 +6292,6 @@ pub mod requests {
     }
     request_builder!(UnsubscribesCreate);
 
-    /// The request of [`unsubscribes.delete`](crate::resources::Unsubscribes::delete): `DELETE /unsubscribes/{id}`.
-    ///
-    /// Await it to send the request; it resolves to the answer's JSON.
-    #[derive(Debug, Clone)]
-    #[must_use = "a request is sent only when awaited"]
-    pub struct UnsubscribesDelete {
-        pub(crate) inner: Request,
-    }
-    request_builder!(UnsubscribesDelete);
-
     /// The request of [`unsubscribes.list`](crate::resources::Unsubscribes::list): `GET /unsubscribes`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -4790,6 +6437,94 @@ pub mod requests {
     }
     request_builder!(WebhooksDelete);
 
+    /// The request of [`webhooks.events.attempts.list`](crate::resources::WebhooksEventsAttempts::list): `GET /webhooks/{id}/events/{event_id}/attempts`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct WebhooksEventsAttemptsList {
+        pub(crate) inner: Request,
+    }
+    impl WebhooksEventsAttemptsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(WebhooksEventsAttemptsList);
+    paginated_builder!(WebhooksEventsAttemptsList);
+
+    /// The request of [`webhooks.events.get`](crate::resources::WebhooksEvents::get): `GET /webhooks/{id}/events/{event_id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct WebhooksEventsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(WebhooksEventsGet);
+
+    /// The request of [`webhooks.events.list`](crate::resources::WebhooksEvents::list): `GET /webhooks/{id}/events`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct WebhooksEventsList {
+        pub(crate) inner: Request,
+    }
+    impl WebhooksEventsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(WebhooksEventsList);
+    paginated_builder!(WebhooksEventsList);
+
+    /// The request of [`webhooks.events.replay`](crate::resources::WebhooksEvents::replay): `POST /webhooks/{id}/events/{event_id}/replay`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct WebhooksEventsReplay {
+        pub(crate) inner: Request,
+    }
+    request_builder!(WebhooksEventsReplay);
+
     /// The request of [`webhooks.get`](crate::resources::Webhooks::get): `GET /webhooks/{id}`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -4834,15 +6569,15 @@ pub mod requests {
     request_builder!(WebhooksList);
     paginated_builder!(WebhooksList);
 
-    /// The request of [`webhooks.rotate`](crate::resources::Webhooks::rotate): `POST /webhooks/{id}/rotate`.
+    /// The request of [`webhooks.rotateSigningSecret`](crate::resources::Webhooks::rotate_signing_secret): `POST /webhooks/{id}/signing-secret/rotate`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
     #[derive(Debug, Clone)]
     #[must_use = "a request is sent only when awaited"]
-    pub struct WebhooksRotate {
+    pub struct WebhooksRotateSigningSecret {
         pub(crate) inner: Request,
     }
-    request_builder!(WebhooksRotate);
+    request_builder!(WebhooksRotateSigningSecret);
 
     /// The request of [`webhooks.update`](crate::resources::Webhooks::update): `PATCH /webhooks/{id}`.
     ///

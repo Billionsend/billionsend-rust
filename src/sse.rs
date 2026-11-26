@@ -55,7 +55,7 @@ pub enum InboxStreamItem {
 /// One server-sent event, as the parser reads it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerSentEvent {
-    /// The stream position after this event (the last `id` field seen), used to resume.
+    /// The stream position after this event (the last `id` of a completed block), used to resume.
     pub id: Option<String>,
     /// The event name (`message` when the server sent none).
     pub event: String,
@@ -70,7 +70,11 @@ pub struct ServerSentEvent {
 pub struct EventParser {
     buffer: Vec<u8>,
     started: bool,
+    /// The position: moved when a block ends (its blank line), not when its
+    /// `id` line is read, so a block cut off midway never moves it past an
+    /// event that did not arrive.
     last_id: Option<String>,
+    pending_id: Option<String>,
     event: String,
     data: Vec<String>,
     has_data: bool,
@@ -147,6 +151,9 @@ impl EventParser {
 
     fn line(&mut self, line: &str) -> Option<ServerSentEvent> {
         if line.is_empty() {
+            if let Some(id) = self.pending_id.take() {
+                self.last_id = Some(id);
+            }
             if !self.has_data {
                 self.event.clear();
                 return None;
@@ -184,7 +191,7 @@ impl EventParser {
                 self.data.push(value.to_owned());
                 self.has_data = true;
             }
-            "id" if !value.contains('\0') => self.last_id = Some(value.to_owned()),
+            "id" if !value.contains('\0') => self.pending_id = Some(value.to_owned()),
             "retry" if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
                 self.retry = value.parse().ok();
             }
@@ -194,6 +201,10 @@ impl EventParser {
     }
 }
 
+/// A connection that delivers nothing for this long (the server writes a
+/// keep-alive every 15 seconds) is dropped and reopened.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+
 /// How an [`EventStream`] reconnects.
 #[derive(Debug, Clone)]
 pub(crate) struct StreamOptions {
@@ -201,6 +212,7 @@ pub(crate) struct StreamOptions {
     pub(crate) reconnect: bool,
     pub(crate) max_reconnects: u32,
     pub(crate) reconnect_delay: Duration,
+    pub(crate) idle_timeout: Duration,
     pub(crate) max_retries: Option<u32>,
 }
 
@@ -211,6 +223,7 @@ impl Default for StreamOptions {
             reconnect: true,
             max_reconnects: 5,
             reconnect_delay: Duration::from_millis(1000),
+            idle_timeout: IDLE_TIMEOUT,
             max_retries: None,
         }
     }
@@ -225,6 +238,7 @@ struct State {
     pending: VecDeque<ServerSentEvent>,
     position: Arc<Mutex<Option<String>>>,
     delay: Duration,
+    idle_timeout: Duration,
     reconnect: bool,
     max_reconnects: u32,
     failures: u32,
@@ -291,8 +305,22 @@ async fn next(mut state: State) -> Option<(Result<InboxStreamItem>, State)> {
             };
             return Some((Ok(InboxStreamItem::Event(item)), state));
         }
+        // Every event read so far was handed out, so an id sent without data
+        // (the server writes one when a stream opens) moves the position too: a
+        // connection that drops before its next event resumes from there.
+        if let Some(id) = &state.parser.last_id {
+            *state.position.lock().expect("stream position lock") = Some(id.clone());
+        }
         if let Some(body) = state.body.as_mut() {
-            match body.next().await {
+            let chunk = if state.idle_timeout.is_zero() {
+                body.next().await
+            } else {
+                // A silent connection counts as a dropped one.
+                tokio::time::timeout(state.idle_timeout, body.next())
+                    .await
+                    .unwrap_or(None)
+            };
+            match chunk {
                 Some(Ok(chunk)) => {
                     let events = state.parser.feed(&chunk);
                     state.take_events(events);
@@ -401,6 +429,7 @@ impl EventStream {
             pending: VecDeque::new(),
             position: Arc::clone(&position),
             delay: options.reconnect_delay,
+            idle_timeout: options.idle_timeout,
             reconnect: options.reconnect,
             max_reconnects: options.max_reconnects,
             failures: 0,
@@ -418,7 +447,8 @@ impl EventStream {
         })
     }
 
-    /// The id of the last event received: pass it to `last_event_id` to resume later.
+    /// The stream's position, the id of the last event received (or the one the
+    /// server opened the stream at): pass it to `last_event_id` to resume later.
     pub fn last_event_id(&self) -> Option<String> {
         self.position.lock().expect("stream position lock").clone()
     }
@@ -483,6 +513,14 @@ macro_rules! stream_builder {
             /// Wait before reconnecting (default 1 s; a server `retry` field overrides it).
             pub fn reconnect_delay(mut self, delay: std::time::Duration) -> Self {
                 self.options.reconnect_delay = delay;
+                self
+            }
+
+            /// A connection that delivers nothing, not even the server's
+            /// keep-alive (every 15 s), for this long is dropped and reopened
+            /// (default 45 s; zero waits forever).
+            pub fn idle_timeout(mut self, idle_timeout: std::time::Duration) -> Self {
+                self.options.idle_timeout = idle_timeout;
                 self
             }
         }

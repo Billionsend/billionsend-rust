@@ -178,3 +178,27 @@ async fn a_4xx_is_final() {
     assert!(matches!(error, Error::Validation(_)));
     assert_eq!(mock.calls().len(), 1);
 }
+
+#[tokio::test]
+async fn a_429_is_retried_for_any_request() {
+    let mock = ContractMock::start().await;
+    mock.error("POST", "/domains", 429, "rate_limit_exceeded", "Slow down")
+        .header("retry-after", "0");
+    mock.error(
+        "PATCH",
+        "/domains/{id}",
+        429,
+        "rate_limit_exceeded",
+        "Slow down",
+    )
+    .header("retry-after", "0");
+    let client = mock.client();
+    client
+        .domains()
+        .create(&json!({ "name": "example.com" }))
+        .await
+        .unwrap();
+    client.domains().update(ID, &json!({})).await.unwrap();
+    assert_eq!(mock.calls().len(), 4);
+    mock.assert_clean();
+}

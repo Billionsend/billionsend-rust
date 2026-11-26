@@ -294,6 +294,7 @@ struct QueryParam {
     name: String,
     setter: String,
     kind: &'static str,
+    required: bool,
     description: String,
 }
 
@@ -340,6 +341,7 @@ fn query_params(document: &Value, op: &Operation<'_>) -> Vec<QueryParam> {
             setter: ident(&snake(&name)),
             name,
             kind,
+            required: parameter["required"] == true,
             description,
         });
     }
@@ -371,7 +373,74 @@ fn success_media(op: &Operation<'_>) -> (&'static str, Option<Value>) {
     )
 }
 
-const RESERVED_SETTERS: [&str; 10] = [
+/// A text field of a `multipart/form-data` body; `json` ones carry JSON.
+struct FormField {
+    name: String,
+    json: bool,
+    description: String,
+}
+
+/// The body of an upload: one file and its text fields.
+struct FormBody {
+    file: String,
+    kind: &'static str,
+    description: String,
+    fields: Vec<FormField>,
+}
+
+fn form_body(document: &Value, op: &Operation<'_>) -> Option<FormBody> {
+    let content = op.spec.get("requestBody")?["content"]
+        .as_object()
+        .expect("request content");
+    if let Some(unknown) = content
+        .keys()
+        .find(|m| !matches!(m.as_str(), "application/json" | "multipart/form-data"))
+    {
+        panic!("{}: unhandled request media type {unknown}", op.id);
+    }
+    let schema = deref(document, &content.get("multipart/form-data")?["schema"]);
+    let mut file = None;
+    let mut fields = Vec::new();
+    for (name, property) in schema["properties"].as_object().expect("form properties") {
+        let property = deref(document, property);
+        let description = property["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        assert_eq!(
+            property["type"], "string",
+            "{}: form field {name} is not a string",
+            op.id
+        );
+        if property["format"] == "binary" {
+            assert!(file.is_none(), "{}: more than one file", op.id);
+            let kind = if description.starts_with("The CSV file") {
+                "Csv"
+            } else if description.starts_with("The image") {
+                "Image"
+            } else {
+                panic!("{}: unknown kind of file: {description}", op.id)
+            };
+            file = Some((name.clone(), kind, description));
+        } else {
+            fields.push(FormField {
+                name: name.clone(),
+                json: description.starts_with("JSON-encoded"),
+                description,
+            });
+        }
+    }
+    let (file, kind, description) =
+        file.unwrap_or_else(|| panic!("{}: a form without a file", op.id));
+    Some(FormBody {
+        file,
+        kind,
+        description,
+        fields,
+    })
+}
+
+const RESERVED_SETTERS: [&str; 11] = [
     "header",
     "timeout",
     "max_retries",
@@ -382,6 +451,7 @@ const RESERVED_SETTERS: [&str; 10] = [
     "last_event_id",
     "reconnect",
     "batch_validation",
+    "idle_timeout",
 ];
 
 fn render(document: &Value) -> String {
@@ -403,7 +473,8 @@ fn render(document: &Value) -> String {
         let builder = pascal(&op.id.split('.').map(str::to_owned).collect::<Vec<_>>());
         let params = path_params(op.path);
         let query = query_params(document, op);
-        let has_body = op.spec.contains_key("requestBody");
+        let form = form_body(document, op);
+        let has_body = form.is_none() && op.spec.contains_key("requestBody");
         let headers: Vec<String> = op
             .spec
             .get("parameters")
@@ -455,6 +526,13 @@ fn render(document: &Value) -> String {
             m.push_str("    ///\n");
             m.push_str(&doc_lines(description, "    "));
         }
+        if let Some(form) = &form {
+            m.push_str("    ///\n");
+            m.push_str(&doc_lines(
+                &format!("`{}`: {}", form.file, form.description),
+                "    ",
+            ));
+        }
         let mut args = Vec::new();
         let mut generics = Vec::new();
         for p in &params {
@@ -463,6 +541,12 @@ fn render(document: &Value) -> String {
         if has_body {
             generics.push("B: serde::Serialize + ?Sized".to_owned());
             args.push("body: &B".to_owned());
+        }
+        if let Some(form) = &form {
+            args.push(format!(
+                "{}: impl Into<crate::FileUpload>",
+                ident(&snake(&form.file))
+            ));
         }
         let generic = if generics.is_empty() {
             String::new()
@@ -487,6 +571,15 @@ fn render(document: &Value) -> String {
         );
         if has_body {
             m.push_str(".json(body)");
+        }
+        if let Some(form) = &form {
+            let _ = write!(
+                m,
+                ".file(\"{}\", {}.into(), FileKind::{})",
+                form.file,
+                ident(&snake(&form.file)),
+                form.kind
+            );
         }
         if idempotent {
             m.push_str(".idempotent()");
@@ -546,7 +639,8 @@ fn render(document: &Value) -> String {
             .iter()
             .filter(|q| !(stream && q.name == "last_event_id"))
             .collect();
-        if !setters.is_empty() || batch_validation {
+        let fields: &[FormField] = form.as_ref().map_or(&[], |f| &f.fields);
+        if !setters.is_empty() || !fields.is_empty() || batch_validation {
             let _ = writeln!(r, "impl {builder} {{");
             for q in setters {
                 assert!(
@@ -559,7 +653,8 @@ fn render(document: &Value) -> String {
                     r.push_str(&doc_lines(&q.description, "    "));
                     r.push_str("    ///\n");
                 }
-                let _ = writeln!(r, "    /// The `{}` query parameter.", q.name);
+                let required = if q.required { " Required." } else { "" };
+                let _ = writeln!(r, "    /// The `{}` query parameter.{required}", q.name);
                 let (sig, value) = match q.kind {
                     "list" => (
                         "<I, S>(mut self, values: I) -> Self where I: IntoIterator<Item = S>, S: Into<String>".to_owned(),
@@ -574,6 +669,36 @@ fn render(document: &Value) -> String {
                     r,
                     "    pub fn {}{sig} {{\n        self.inner.set_query(\"{}\", {value});\n        self\n    }}",
                     q.setter, q.name
+                );
+            }
+            for field in fields {
+                let setter = ident(&snake(&field.name));
+                assert!(
+                    !RESERVED_SETTERS.contains(&setter.as_str()),
+                    "{}: form field {} collides with a builder method",
+                    op.id,
+                    field.name
+                );
+                if !field.description.is_empty() {
+                    r.push_str(&doc_lines(&field.description, "    "));
+                    r.push_str("    ///\n");
+                }
+                let _ = writeln!(r, "    /// The `{}` form field.", field.name);
+                let (sig, call) = if field.json {
+                    r.push_str("    /// A string is sent as it is (already JSON); anything else is encoded.\n");
+                    (
+                        "<T: serde::Serialize + ?Sized>(mut self, value: &T) -> Self",
+                        format!("set_json_field(\"{}\", value)", field.name),
+                    )
+                } else {
+                    (
+                        "(mut self, value: impl Into<String>) -> Self",
+                        format!("set_field(\"{}\", value.into())", field.name),
+                    )
+                };
+                let _ = writeln!(
+                    r,
+                    "    pub fn {setter}{sig} {{\n        self.inner.{call};\n        self\n    }}"
                 );
             }
             if batch_validation {
@@ -685,7 +810,7 @@ fn render(document: &Value) -> String {
     out.push_str(&root_impl);
     out.push_str("/// The resources: one struct per group of operations, reached from the client.\npub mod resources {\n");
     out.push_str("#![allow(rustdoc::bare_urls, rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]\n");
-    out.push_str("use reqwest::Method;\n\nuse super::requests;\nuse crate::client::BillionSend;\nuse crate::request::Request;\nuse crate::sse::StreamOptions;\n\n");
+    out.push_str("use reqwest::Method;\n\nuse super::requests;\nuse crate::client::BillionSend;\nuse crate::request::Request;\nuse crate::sse::StreamOptions;\nuse crate::upload::FileKind;\n\n");
     out.push_str(&resources);
     out.push_str("}\n\n");
     out.push_str("/// The request builders: one per operation, with a setter for each query parameter.\npub mod requests {\n");

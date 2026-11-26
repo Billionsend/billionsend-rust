@@ -240,3 +240,75 @@ fn debug_output_hides_the_key() {
     assert!(!text.contains("bs_secret_value"), "{text}");
     assert!(text.contains("<set>"));
 }
+
+#[tokio::test]
+async fn a_success_without_a_body_is_null() {
+    let mock = ContractMock::start().await;
+    for status in [204, 200] {
+        mock.respond(
+            "DELETE",
+            "/domains/{id}",
+            wiremock::ResponseTemplate::new(status),
+        );
+    }
+    let client = mock.client();
+    assert!(client.domains().delete(ID).await.unwrap().is_null());
+    let raw = client.domains().delete(ID).raw().await.unwrap();
+    assert_eq!(raw.status, 200);
+    assert!(raw.body.is_null());
+}
+
+#[tokio::test]
+async fn a_dot_path_parameter_sends_nothing() {
+    let mock = ContractMock::start().await;
+    for id in [".", ".."] {
+        let error = mock.client().emails().get(id).await.unwrap_err();
+        assert!(matches!(error, Error::Application(_)), "{error:?}");
+        assert_eq!(
+            error.message(),
+            format!("Invalid path parameter \"id\": \"{id}\"")
+        );
+    }
+    assert!(mock.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_header_http_cannot_carry_is_refused_without_its_value() {
+    let mock = ContractMock::start().await;
+    for key in ["welcome/订单-1", "line\nbreak"] {
+        let error = mock
+            .client()
+            .emails()
+            .send(&send_body())
+            .idempotency_key(key)
+            .await
+            .unwrap_err();
+        assert_eq!(error.name(), "invalid_header");
+        assert!(error.message().contains("idempotency-key"));
+        assert!(!error.message().contains(key));
+    }
+    let error = BillionSend::builder()
+        .api_key("bs_bad\nkey")
+        .base_url(mock.uri())
+        .build()
+        .unwrap()
+        .domains()
+        .list()
+        .await
+        .unwrap_err();
+    assert_eq!(error.name(), "invalid_header");
+    assert!(!error.message().contains("bs_bad"));
+    assert!(mock.calls().is_empty());
+}
+
+#[tokio::test]
+async fn the_key_is_read_without_the_whitespace_around_it() {
+    let mock = ContractMock::start().await;
+    let client = BillionSend::builder()
+        .api_key(format!("  {API_KEY}\n"))
+        .base_url(mock.uri())
+        .build()
+        .unwrap();
+    client.domains().list().await.unwrap();
+    mock.assert_clean();
+}

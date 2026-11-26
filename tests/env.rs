@@ -28,6 +28,23 @@ async fn reads_the_key_and_base_url_from_the_environment() {
     client.domains().list().await.unwrap();
     mock.assert_clean();
 
+    // A blank key counts as none, so the environment's is used; a key from the
+    // environment is trimmed too.
+    unsafe {
+        std::env::set_var("BILLIONSEND_API_KEY", format!("{API_KEY}\n"));
+    }
+    let blank = mock.builder().api_key(" \n").build().unwrap();
+    unsafe {
+        std::env::set_var("BILLIONSEND_API_KEY", "  ");
+    }
+    let none = BillionSend::from_env();
+    unsafe {
+        std::env::remove_var("BILLIONSEND_API_KEY");
+    }
+    blank.domains().list().await.unwrap();
+    assert!(!none.has_api_key());
+    mock.assert_clean();
+
     let default = BillionSend::builder().build().unwrap();
     assert_eq!(default.base_url(), "https://api.billionsend.com");
 }

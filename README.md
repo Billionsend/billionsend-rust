@@ -1,15 +1,15 @@
 # BillionSend Rust SDK
 
-The official Rust client for the [BillionSend](https://billionsend.com) email API: send email, run inboxes for people and agents, stream inbox events, verify webhooks, and manage domains, contacts and broadcasts.
+The official Rust client for the [BillionSend](https://billionsend.com) email API: send email, run inboxes for people and agents, stream inbox events, verify webhooks, and manage domains, contacts, broadcasts and automations.
 
-- Every API operation, one method each, named after the operation in the BillionSend OpenAPI document.
+- Every API operation (186), one method each, named after the operation in the BillionSend OpenAPI document.
 - Answers as `serde_json::Value`, or any type you deserialise them into with `.json::<T>()`. Request bodies are anything that implements `serde::Serialize`.
 - Errors as one enum, a variant per kind, each with the status, the API's error name, the message and the request id.
 - Safe sends: every send carries an `Idempotency-Key`, so retries after a timeout never send twice.
 - Streams for every cursor list and for live inbox events, with automatic resume.
 - Async, on `tokio` and `reqwest` (rustls by default). Rust 1.85 or later.
 
-Documentation: [billionsend.com/docs](https://billionsend.com/docs) · SDK guide: [billionsend.com/docs/sdks/rust](https://billionsend.com/docs/sdks/rust) · API reference: [docs.rs/billionsend](https://docs.rs/billionsend) · Source: [github.com/billionsend/billionsend-rust](https://github.com/billionsend/billionsend-rust)
+Documentation: [billionsend.com/docs](https://billionsend.com/docs) · SDK guide: [billionsend.com/docs/sdks/rust](https://billionsend.com/docs/sdks/rust) · Crate docs: [docs.rs/billionsend](https://docs.rs/billionsend) · Source: [github.com/billionsend/billionsend-rust](https://github.com/billionsend/billionsend-rust)
 
 ## Install
 
@@ -77,7 +77,7 @@ println!("{} {:?} {}", raw.status, raw.request_id(), raw.body);
 # Ok(()) }
 ```
 
-**Idempotency.** The sending operations (`emails().send`, `emails().batch`, `emails().receiving().reply` / `forward`, `inboxes().send`, `inboxes().drafts().send`, `inboxes().threads().emails().reply` / `forward`) always send an `Idempotency-Key` header. Without your own, each call gets a new random key (a UUID) and that call's retries reuse it, so a retry after a timeout cannot send twice. Pass your own key to make a send safe across calls and processes too; a repeat with the same key and payload returns the first result:
+**Idempotency.** The sending operations (`emails().send`, `emails().batch`, `emails().receiving().reply` / `forward`, `inboxes().send`, `inboxes().drafts().send`, `inboxes().threads().emails().reply` / `forward`) and `events().send` always send an `Idempotency-Key` header. Without your own, each call gets a new random key (a UUID) and that call's retries reuse it, so a retry after a timeout cannot send twice. Pass your own key to make a send safe across calls and processes too; a repeat with the same key and payload returns the first result:
 
 ```rust,no_run
 # async fn run(bs: billionsend::BillionSend, message: serde_json::Value, user_id: u64) -> Result<(), billionsend::Error> {
@@ -85,7 +85,7 @@ bs.emails().send(&message).idempotency_key(format!("welcome/{user_id}")).await?;
 # Ok(()) }
 ```
 
-**Retries.** Failures worth retrying are retried up to `max_retries` times (default 2): `429`, `5xx`, timeouts and network errors, and the `409 concurrent_idempotent_requests` the API answers while the first attempt with the same key is still running. Only requests safe to repeat are retried: `GET`, `PUT`, `DELETE` and the sending operations above. The client waits as `retry-after` asks, or backs off exponentially (0.5 s, 1 s, 2 s … up to 8 s, less up to a quarter of jitter); a `retry-after` over a minute is not waited for, and the error comes back instead.
+**Retries.** Failures worth retrying are retried up to `max_retries` times (default 2): `429`, `5xx`, timeouts and network errors, and the `409 concurrent_idempotent_requests` the API answers while the first attempt with the same key is still running. A `429` is retried for every request, since the API answers it before it writes anything. The other failures are retried only for requests safe to repeat: `GET`, `PUT`, `DELETE` and the operations with an `Idempotency-Key` above. An upload is not one of them, although it is a `PUT` or a `POST`. The client waits as `retry-after` asks, or backs off exponentially (0.5 s, 1 s, 2 s … up to 8 s, less up to a quarter of jitter); a `retry-after` over a minute is not waited for, and the error comes back instead.
 
 ```rust,no_run
 # async fn run(message: serde_json::Value) -> Result<(), billionsend::Error> {
@@ -111,7 +111,7 @@ Every call returns `Result<T, billionsend::Error>`. The variant says what kind o
 | `Error::Connection` | no answer: DNS, connection or TLS failure (no status) |
 | `Error::Timeout` | the request timed out |
 | `Error::WebhookVerification` | a webhook that does not verify |
-| `Error::Application` | made up by the client without a call, such as an empty path parameter |
+| `Error::Application` | made up by the client without a call: an empty (or `.`, `..`) path parameter, or a header value HTTP cannot carry (`name()` is `"invalid_header"`; the message never holds the value) |
 
 Each carries `status_code()`, `name()` (the API's error name, such as `validation_error`; `application_error` when the API sent none), `message()` and `request_id()`, the answer's `x-request-id`: the same id the request has on the dashboard's Logs page, so quote it when you ask about a request.
 
@@ -127,6 +127,8 @@ match bs.emails().get(id).await {
 }
 # Ok(()) }
 ```
+
+A success with no body answers `null`.
 
 ## Pagination
 
@@ -231,9 +233,11 @@ while let Some(item) = events.next().await {
 # Ok(()) }
 ```
 
+The server writes a keep-alive every 15 seconds; a connection that delivers nothing for 45 seconds is dropped and reopened (`.idle_timeout(..)` sets another limit, zero waits forever). `events.last_event_id()` is the stream's position: the last event's id, or the one the server opened the stream at.
+
 ## Verify webhooks
 
-Every webhook delivery is signed with the endpoint's `whsec_` secret (shown when you create the endpoint, and by `webhooks().rotate`). `verify_webhook` checks the signature and the timestamp (within 5 minutes by default, so a captured delivery cannot be replayed) and returns the parsed event; anything wrong is an `Error::WebhookVerification`. Pass the body exactly as it arrived, before any JSON parsing. The headers can be a `reqwest`/`http` `HeaderMap`, a `HashMap` or a list of pairs:
+Every webhook delivery is signed with the endpoint's `whsec_` secret (shown when you create the endpoint). `verify_webhook` checks the signature and the timestamp (within 5 minutes by default, so a captured delivery cannot be replayed) and returns the parsed event; anything wrong is an `Error::WebhookVerification`. Pass the body exactly as it arrived, before any JSON parsing. The headers can be a `reqwest`/`http` `HeaderMap`, a `HashMap` or a list of pairs:
 
 ```rust,no_run
 # fn handle(raw_body: &[u8], headers: &reqwest::header::HeaderMap) -> Result<(), billionsend::Error> {
@@ -245,7 +249,30 @@ if event["type"] == "email.bounced" {
 # Ok(()) }
 ```
 
-`WebhookVerifier::new(secret)?.tolerance(..)` sets another tolerance. During a secret rotation a delivery carries a signature for each live secret, and either secret verifies it.
+`WebhookVerifier::new(secret)?.tolerance(..)` sets another tolerance. During a secret rotation (`webhooks().rotate_signing_secret`) a delivery carries a signature for each live secret, and either secret verifies it.
+
+## Uploads
+
+The two logo uploads and the contact import send `multipart/form-data`. The file is anything that converts into a `FileUpload`: bytes (`Vec<u8>`, `&[u8]`, `bytes::Bytes`), or a `FileUpload` with its own `.file_name(..)` and `.content_type(..)`. A logo is a PNG, JPEG or WebP of at most 2 MiB, named and typed from its bytes unless you say otherwise; a CSV is sent as `contacts.csv`. An import's fields are setters, and `column_map`, `segments` and `topics` take anything `serde::Serialize` (a string is sent as it is, already JSON):
+
+```rust,no_run
+# async fn run(bs: billionsend::BillionSend, domain_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+use serde_json::json;
+
+bs.domains().unsubscribe_page().logo().upload(domain_id, std::fs::read("logo.png")?).await?;
+
+let import = bs
+    .contacts()
+    .imports()
+    .create(std::fs::read("people.csv")?)
+    .column_map(&json!({ "email": "Email", "first_name": "First Name" }))
+    .on_conflict("skip")
+    .await?;
+println!("{}", import["id"]);
+# Ok(()) }
+```
+
+An upload is not repeated after a `5xx`, a timeout or a dropped connection; a `429` is retried.
 
 ## Agent sign-up
 
@@ -291,22 +318,27 @@ Every request builder also has `.header(..)`, `.timeout(..)` and `.max_retries(.
 
 | Method | Covers |
 | --- | --- |
-| `emails()` | send, batch, list, get, update, cancel, delete, insights |
+| `emails()` | send, batch, list, get, update, cancel, delete, insights, share, unshare, `attachments()` (list, get) |
 | `emails().metrics()` | `get` (the counts over time), and `links`, `countries`, `clients` |
 | `emails().receiving()` | received mail: list, get, delete, reply, forward, `attachments()` (list, get, text) |
-| `domains()` | create, list, get, update, delete, verify |
-| `api_keys()` | create, list, delete |
-| `contacts()` | create, list, get, update, delete, preferences_link, `batch()`, `topics()`, `segments()` |
+| `domains()` | create, list, get, update, delete, verify, `claims()` (create, get, verify), `unsubscribe_page().logo()` (upload, delete) |
+| `api_keys()` | create, list, update, delete |
+| `contacts()` | create, list, get, update, delete, preferences_link, `batch()`, `topics()`, `segments()` (list, add, remove), `imports()` (create, list, get) |
 | `audiences().contacts()` | contacts addressed through an audience |
 | `contact_properties()`, `segments()`, `topics()` | create, list, get, update, delete (segment contacts under `segments().contacts()`) |
-| `broadcasts()` | create, list, get, update, delete, send, duplicate, cancel |
+| `broadcasts()` | create, list, get, update, delete, send, duplicate, cancel, recipients, clicked_links |
+| `automations()` | create, list, get, update, remove, validate, duplicate, simulate, stop, metrics, `runs()` (list, get, cancel) |
+| `events()` | create, list, get, update, remove, send (custom events) |
 | `templates()` | create, list, get, update, delete, publish, duplicate |
-| `webhooks()` | create, list, get, update, delete, rotate |
+| `webhooks()` | create, list, get, update, delete, rotate_signing_secret, `events()` (list, get, replay, `attempts()`) |
 | `suppressions()` | create, list, get, delete, `batch()` add / remove |
-| `unsubscribes()` | create, list, delete |
+| `unsubscribes()` | create, list |
 | `verifications()` | availability, estimate, create, list, get |
 | `usage()`, `deliverability()` | get |
-| `inboxes()` | create, list, get, update, delete, send, `agent()`, `safety()`, `labels()`, `threads()` (search, labels, emails, reply, forward), `quarantine()`, `codes()`, `drafts()`, `events()` |
+| `brand()` | get, update, `logo()` (upload, delete) |
+| `logs()` | list, get |
+| `oauth_grants()` | list, revoke (connected apps) |
+| `inboxes()` | create, list, get, update, delete, send, `agent()` (get, update), `safety()`, `labels()`, `threads()` (search, labels, emails, reply, forward), `quarantine()`, `codes()`, `drafts()`, `events()` |
 | `agent()` | signup, status, claim_email |
 
 Each method is the operation's `operationId` in snake_case: `inboxes.threads.labels.set` is `bs.inboxes().threads().labels().set(..)`. One operation is also the group of others: `emails.metrics` is `bs.emails().metrics().get()`, beside `emails.metrics.links` / `countries` / `clients` as `bs.emails().metrics().links()` and so on.
@@ -325,7 +357,7 @@ cargo xtask generate --check
 The contract is `openapi/api.openapi.json`, a snapshot of the API's OpenAPI document. `src/generated.rs` (the resources, their methods and one request builder per operation) is generated from it, its descriptions becoming the doc comments. The tests run every SDK method against a local mock that validates each request and answers from that snapshot, and fail when an operation has no SDK method or a request leaves the contract. When the API changes:
 
 ```bash
-cargo xtask sync               # from ../billionsend (its main), or: --from path/to/api.openapi.json, --url <url>
+cargo xtask sync --url https://billionsend.com/docs/api.openapi.json   # or: --from path/to/api.openapi.json
 cargo xtask generate           # regenerates src/generated.rs
 cargo test                     # what fails is what the SDK has to follow
 ```
@@ -334,7 +366,7 @@ cargo test                     # what fails is what the SDK has to follow
 
 Publishing is manual; nothing is published on push.
 
-1. Set `version` in `Cargo.toml`, turn the changelog's `Unreleased` heading into that version, commit, then tag and push: `git tag v0.1.0 && git push origin main v0.1.0`.
+1. Set `version` in `Cargo.toml`, turn the changelog's `Unreleased` heading into that version, commit, then tag and push: `git tag -a v0.2.0 -m "release 0.2.0" && git push origin main v0.2.0`.
 2. The first version only: an owner of the crate's crates.io account publishes from a clean checkout of the tag with an API token (scope `publish-new`): `cargo test && cargo publish --dry-run && cargo publish`.
 3. Once the crate exists: on crates.io, `billionsend` → Settings → Trusted Publishing → GitHub, repository `billionsend/billionsend-rust`, workflow `release.yml`, environment `crates-io`.
 4. Every later version: Actions → `release` → Run workflow, on the version tag. The workflow refuses a branch or a tag that differs from `Cargo.toml`, runs every check, and publishes with crates.io Trusted Publishing (no token stored).

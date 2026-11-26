@@ -110,7 +110,11 @@ impl WebhookVerifier {
     /// the dashboard and the API hand it out).
     pub fn new(secret: &str) -> Result<Self> {
         let malformed = || Error::webhook("The webhook secret is not a whsec_ secret");
-        let encoded = secret.strip_prefix(SECRET_PREFIX).ok_or_else(malformed)?;
+        // A secret read from a file ends in a newline.
+        let encoded = secret
+            .trim()
+            .strip_prefix(SECRET_PREFIX)
+            .ok_or_else(malformed)?;
         let key = STANDARD.decode(encoded).map_err(|_| malformed())?;
         if !(SECRET_MIN_BYTES..=SECRET_MAX_BYTES).contains(&key.len())
             || STANDARD.encode(&key) != encoded
@@ -156,14 +160,16 @@ impl WebhookVerifier {
         headers: &(impl WebhookHeaders + ?Sized),
     ) -> Result<serde_json::Value> {
         let body = payload.as_ref();
+        let read = |name| {
+            headers
+                .header(name)
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
         let (Some(id), Some(timestamp), Some(signature)) = (
-            headers.header("webhook-id").filter(|v| !v.is_empty()),
-            headers
-                .header("webhook-timestamp")
-                .filter(|v| !v.is_empty()),
-            headers
-                .header("webhook-signature")
-                .filter(|v| !v.is_empty()),
+            read("webhook-id"),
+            read("webhook-timestamp"),
+            read("webhook-signature"),
         ) else {
             return Err(Error::webhook(
                 "Missing the webhook-id, webhook-timestamp or webhook-signature header",
@@ -195,7 +201,7 @@ impl WebhookVerifier {
         mac.update(timestamp.as_bytes());
         mac.update(b".");
         mac.update(body);
-        let matched = signature.split(' ').any(|candidate| {
+        let matched = signature.split_whitespace().any(|candidate| {
             let Some((version, encoded)) = candidate.split_once(',') else {
                 return false;
             };

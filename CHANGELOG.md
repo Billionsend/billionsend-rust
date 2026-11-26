@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 (2026-11-26)
+
+The OpenAPI snapshot follows the published document (186 operations, up from 139), and the SDK follows it.
+
+- New operations: automations (`automations().create`, `list`, `get`, `update`, `remove`, `validate`, `duplicate`, `simulate`, `stop`, `metrics`; `automations().runs().list`, `get`, `cancel`), custom events (`events().create`, `list`, `get`, `update`, `remove`, `send`, the last with an `Idempotency-Key` like the sending operations), brand defaults (`brand().get`, `update`; `brand().logo().upload`, `delete`), contact imports (`contacts().imports().create`, `list`, `get`), `contacts().segments().list`, domain claims (`domains().claims().create`, `get`, `verify`), `domains().unsubscribe_page().logo().upload` and `delete`, `emails().share` and `unshare`, `emails().attachments().list` and `get`, `broadcasts().recipients` and `clicked_links`, `logs().list` and `get`, `oauth_grants().list` and `revoke`, `webhooks().events().list`, `get`, `replay` and `events().attempts().list`, `webhooks().rotate_signing_secret`, `api_keys().update` and `inboxes().agent().update`. Every cursor list has `into_stream()`.
+- Removed: `unsubscribes().delete` (a recipient's opt-out can no longer be deleted through the API) and `webhooks().rotate` (replaced by `webhooks().rotate_signing_secret`).
+- New query parameter: `suppressions().list().kind("email" | "domain" | "all")`. Suppressions can block a whole domain and carry a `note`; entries carry `kind`, `domain` and `removable`, and `email` is `null` on a domain entry. Doc comments follow the published descriptions, which also cover `domains().get`'s `sending_limits`, the unsubscribe page's new fields, a broadcast's `dormant_check` and `include_dormant`, `deliverability().get`'s `domains` and the 403 `restricted_api_key`.
+- Uploads (`multipart/form-data`) take a `FileUpload`: bytes, with an optional file name and content type. An upload is not repeated after a 5xx, a timeout or a dropped connection; a 429 repeats it.
+- A 429 is retried for every request, a `POST` or `PATCH` without an idempotency key included (the API answers it before it writes anything).
+- A success with no body (a 204, an empty 200) answers `null` instead of an `Error::Api`.
+- A path parameter of `.` or `..` is refused before any request, like an empty one.
+- A header value HTTP cannot carry (non-ASCII or a control character) is an `Error::Application` named `invalid_header`.
+- The API key is read without the whitespace around it, and a blank one counts as none, so the environment's is used.
+- Event streams: an `id` counts once its block is complete; an id sent without data moves the position, so a connection that drops before its first event resumes from there; a connection that delivers nothing for 45 seconds (`idle_timeout`) is dropped and reopened.
+- `verify_webhook` accepts a secret and headers with surrounding whitespace and a signature list separated by any whitespace.
+
 ## 0.1.2 (2026-11-17)
 
 - An inbox event stream whose reconnect the API refuses with a `retry-after` (a 429 for the stream cap, a 5xx) waits as it asks before trying again; one asking for more than a minute ends the stream with that error at once. When the reconnects run out, the stream ends with the API's own last refusal (`Error::RateLimit`, `Error::Server`, …) instead of a general `Error::Connection`, which stays for reconnects that got no answer at all.

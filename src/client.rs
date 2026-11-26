@@ -63,6 +63,12 @@ fn read_env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
+/// The key as it goes into the header: one read from a file ends in a newline,
+/// so surrounding whitespace is dropped, and a blank key is no key.
+fn clean_key(key: String) -> Option<String> {
+    Some(key.trim().to_owned()).filter(|k| !k.is_empty())
+}
+
 impl BillionSend {
     /// A client with this API key (`bs_...`). The base URL is
     /// `BILLIONSEND_BASE_URL` when set, otherwise `https://api.billionsend.com`.
@@ -120,7 +126,8 @@ impl std::fmt::Debug for ClientBuilder {
 }
 
 impl ClientBuilder {
-    /// The API key (`bs_...`). Defaults to the `BILLIONSEND_API_KEY` environment variable.
+    /// The API key (`bs_...`), read without surrounding whitespace. Without one
+    /// (or with a blank one) the `BILLIONSEND_API_KEY` environment variable is used.
     pub fn api_key(mut self, api_key: impl Into<String>) -> Self {
         self.api_key = Some(api_key.into());
         self
@@ -138,9 +145,10 @@ impl ClientBuilder {
         self
     }
 
-    /// Retries for 429, 5xx, timeouts and network failures (default 2). Only
-    /// requests safe to repeat are retried: `GET`, `PUT` and `DELETE`, and the
-    /// sending operations, which always carry an `Idempotency-Key`.
+    /// Retries for 429, 5xx, timeouts and network failures (default 2). A 429
+    /// is retried for any request; the other failures only for requests safe to
+    /// repeat: `GET`, `PUT` (uploads excepted) and `DELETE`, and the operations
+    /// that take an `Idempotency-Key`, which always carry one.
     pub fn max_retries(mut self, max_retries: u32) -> Self {
         self.max_retries = Some(max_retries);
         self
@@ -168,9 +176,9 @@ impl ClientBuilder {
         let mut headers = HeaderMap::new();
         for (name, value) in self.headers {
             let name = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|_| Error::application(format!("Invalid header name {name:?}")))?;
+                .map_err(|_| Error::invalid_header(format!("Invalid header name {name:?}")))?;
             let value = HeaderValue::from_str(&value)
-                .map_err(|_| Error::application(format!("Invalid value for header {name}")))?;
+                .map_err(|_| Error::invalid_header(format!("Invalid value for header {name}")))?;
             headers.insert(name, value);
         }
         let base_url = self
@@ -181,7 +189,10 @@ impl ClientBuilder {
             .to_owned();
         Ok(BillionSend {
             inner: Arc::new(Inner {
-                api_key: self.api_key.or_else(|| read_env("BILLIONSEND_API_KEY")),
+                api_key: self
+                    .api_key
+                    .and_then(clean_key)
+                    .or_else(|| read_env("BILLIONSEND_API_KEY").and_then(clean_key)),
                 base_url,
                 timeout,
                 max_retries: self.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),

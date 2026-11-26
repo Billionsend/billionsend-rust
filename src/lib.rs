@@ -9,6 +9,7 @@ pub mod pagination;
 mod request;
 pub mod retry;
 pub mod sse;
+mod upload;
 pub mod webhooks;
 
 pub use client::{
@@ -18,6 +19,7 @@ pub use error::{APPLICATION_ERROR, Error, ErrorDetails, Result};
 pub use generated::{requests, resources};
 pub use request::ApiResponse;
 pub use sse::{EventStream, InboxStreamEvent, InboxStreamItem, StreamGapEvent};
+pub use upload::FileUpload;
 pub use webhooks::{WebhookVerifier, verify_webhook};
 
 /// This crate's version.

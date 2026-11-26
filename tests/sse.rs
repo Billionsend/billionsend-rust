@@ -526,3 +526,101 @@ async fn failed_reconnects_count_until_one_opens() {
     );
     assert_eq!(mock.calls().len(), 5);
 }
+
+#[test]
+fn an_id_counts_only_once_its_block_is_complete() {
+    let mut parser = EventParser::new(Some("1".to_owned()));
+    let events = parser.feed(b"id: 2\ndata: x\n\nid: 3\nevent: cut\n");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].id.as_deref(), Some("2"));
+    assert!(parser.finish().is_empty());
+}
+
+#[tokio::test]
+async fn an_id_without_data_moves_the_position() {
+    let mock = ContractMock::start().await;
+    // The block a stream opens with, then the server hangs up before any event;
+    // then a block cut off midway, which moves nothing.
+    mock.respond("GET", "/inboxes/events", sse("id: 5\n\n"));
+    mock.respond("GET", "/inboxes/events", sse("id: 6\nevent: cut\n"));
+    mock.respond(
+        "GET",
+        "/inboxes/events",
+        sse(&event("7", "inbox.email.received")),
+    );
+    let mut stream = mock
+        .client()
+        .inboxes()
+        .events()
+        .stream()
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    assert!(matches!(
+        stream.next().await,
+        Some(Ok(InboxStreamItem::Event(_)))
+    ));
+    let calls = mock.calls();
+    let positions: Vec<Option<&str>> = calls.iter().map(|c| c.header("last-event-id")).collect();
+    assert_eq!(positions, [None, Some("5"), Some("5")]);
+    assert_eq!(stream.last_event_id().as_deref(), Some("7"));
+    mock.assert_clean();
+}
+
+/// A server whose first connection sends one event and then nothing, without
+/// closing; the second sends the next event. Answers the requests it read.
+fn silent_server() -> (String, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (requests, read) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut open = Vec::new();
+        for (n, stream) in listener.incoming().take(2).enumerate() {
+            let mut stream = stream.unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let size = stream.read(&mut chunk).unwrap();
+                assert!(size > 0, "the request ended early");
+                request.extend_from_slice(&chunk[..size]);
+            }
+            requests.send(String::from_utf8(request).unwrap()).unwrap();
+            let body = event(&(n + 1).to_string(), "inbox.email.received");
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n{:x}\r\n{body}\r\n",
+                body.len()
+            )
+            .unwrap();
+            open.push(stream);
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    });
+    (format!("http://{address}"), read)
+}
+
+#[tokio::test]
+async fn a_silent_connection_is_dropped_and_reopened() {
+    let (url, requests) = silent_server();
+    let client = billionsend::BillionSend::builder()
+        .api_key(common::API_KEY)
+        .base_url(url)
+        .build()
+        .unwrap();
+    let stream = client
+        .inboxes()
+        .events()
+        .stream()
+        .idle_timeout(Duration::from_millis(100))
+        .reconnect_delay(Duration::from_millis(5))
+        .await
+        .unwrap();
+    let items = tokio::time::timeout(Duration::from_secs(5), stream.take(2).collect::<Vec<_>>())
+        .await
+        .expect("the silent connection was dropped");
+    let items: Vec<InboxStreamItem> = items.into_iter().map(Result::unwrap).collect();
+    assert_eq!(ids(&items), ["1", "2"]);
+    let _first = requests.recv().unwrap();
+    assert!(requests.recv().unwrap().contains("last-event-id: 1\r\n"));
+}

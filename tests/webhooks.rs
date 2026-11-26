@@ -204,3 +204,18 @@ fn a_body_that_is_not_json_fails_after_the_signature() {
         .unwrap_err();
     assert_eq!(error.message(), "The webhook body is not JSON");
 }
+
+#[test]
+fn whitespace_around_the_secret_headers_and_signatures() {
+    let headers = [
+        ("webhook-id", format!(" {MSG_ID} ")),
+        ("webhook-timestamp", format!("{TIMESTAMP}\n")),
+        (
+            "webhook-signature",
+            format!("\tv1,bm9wZQ==\n\t{SIGNATURE} "),
+        ),
+    ];
+    verifier(&format!(" {SECRET}\n"), TIMESTAMP)
+        .verify(PAYLOAD, &headers)
+        .unwrap();
+}

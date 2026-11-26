@@ -13,7 +13,7 @@ use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 
 use billionsend::{BillionSend, InboxStreamItem, Result};
-use common::{ContractMock, ID, ID2, INBOX, OPERATIONS, body_example, operation_keys};
+use common::{CSV, ContractMock, ID, ID2, INBOX, OPERATIONS, PNG, body_example, operation_keys};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 
@@ -58,16 +58,36 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("POST", "/api-keys") => c.api_keys().create(&b),
         ("DELETE", "/api-keys/{id}") => c.api_keys().delete(ID),
         ("GET", "/api-keys") => c.api_keys().list(),
+        ("PATCH", "/api-keys/{id}") => c.api_keys().update(ID, &b),
         ("POST", "/audiences/{audienceId}/contacts") => c.audiences().contacts().create(ID, &b),
         ("DELETE", "/audiences/{audienceId}/contacts/{id}") => c.audiences().contacts().delete(ID, ID2),
         ("GET", "/audiences/{audienceId}/contacts/{id}") => c.audiences().contacts().get(ID, ID2),
         ("PATCH", "/audiences/{audienceId}/contacts/{id}") => c.audiences().contacts().update(ID, ID2, &b),
+        ("POST", "/automations") => c.automations().create(&b),
+        ("POST", "/automations/{id}/duplicate") => c.automations().duplicate(ID),
+        ("GET", "/automations/{id}") => c.automations().get(ID),
+        ("GET", "/automations") => c.automations().list().status("enabled"),
+        ("GET", "/automations/{id}/metrics") => c.automations().metrics(ID),
+        ("DELETE", "/automations/{id}") => c.automations().remove(ID),
+        ("POST", "/automations/{id}/runs/{run_id}/cancel") => c.automations().runs().cancel(ID, ID2),
+        ("GET", "/automations/{id}/runs/{run_id}") => c.automations().runs().get(ID, ID2),
+        ("GET", "/automations/{id}/runs") => c.automations().runs().list(ID),
+        ("POST", "/automations/{id}/simulate") => c.automations().simulate(ID, &b),
+        ("POST", "/automations/{id}/stop") => c.automations().stop(ID),
+        ("PATCH", "/automations/{id}") => c.automations().update(ID, &b),
+        ("POST", "/automations/validate") => c.automations().validate(&b),
+        ("GET", "/brand") => c.brand().get(),
+        ("DELETE", "/brand/logo") => c.brand().logo().delete(),
+        ("PUT", "/brand/logo") => c.brand().logo().upload(PNG),
+        ("PATCH", "/brand") => c.brand().update(&b),
         ("POST", "/broadcasts/{id}/cancel") => c.broadcasts().cancel(ID),
+        ("GET", "/broadcasts/{id}/clicked-links") => c.broadcasts().clicked_links(ID),
         ("POST", "/broadcasts") => c.broadcasts().create(&b),
         ("DELETE", "/broadcasts/{id}") => c.broadcasts().delete(ID),
         ("POST", "/broadcasts/{id}/duplicate") => c.broadcasts().duplicate(ID),
         ("GET", "/broadcasts/{id}") => c.broadcasts().get(ID),
         ("GET", "/broadcasts") => c.broadcasts().list(),
+        ("GET", "/broadcasts/{id}/recipients") => c.broadcasts().recipients(ID).r#type("delivered"),
         ("POST", "/broadcasts/{id}/send") => c.broadcasts().send(ID, &b),
         ("PATCH", "/broadcasts/{id}") => c.broadcasts().update(ID, &b),
         ("POST", "/contact-properties") => c.contact_properties().create(&b),
@@ -82,6 +102,10 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("DELETE", "/contacts/{id}") => c.contacts().delete(ID).erase("true"),
         ("GET", "/contacts/{id}") => c.contacts().get(ID),
         ("GET", "/contacts") => c.contacts().list(),
+        ("POST", "/contacts/imports") => c.contacts().imports().create(CSV).on_conflict("skip"),
+        ("GET", "/contacts/imports/{id}") => c.contacts().imports().get(ID),
+        ("GET", "/contacts/imports") => c.contacts().imports().list(),
+        ("GET", "/contacts/{id}/segments") => c.contacts().segments().list(ID),
         ("POST", "/contacts/{id}/preferences-link") => c.contacts().preferences_link(ID),
         ("POST", "/contacts/{id}/segments/{segmentId}") => c.contacts().segments().add(ID, ID2),
         ("DELETE", "/contacts/{id}/segments/{segmentId}") => c.contacts().segments().remove(ID, ID2),
@@ -90,12 +114,27 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("PATCH", "/contacts/{id}") => c.contacts().update(ID, &b),
         ("GET", "/deliverability") => c.deliverability().get(),
         ("POST", "/domains") => c.domains().create(&b),
+        ("POST", "/domains/claim") => c.domains().claims().create(&b),
+        ("GET", "/domains/{id}/claim") => c.domains().claims().get(ID),
+        ("POST", "/domains/{id}/claim/verify") => c.domains().claims().verify(ID),
+        ("DELETE", "/domains/{id}/unsubscribe-page/logo") => c.domains().unsubscribe_page().logo().delete(ID),
+        ("PUT", "/domains/{id}/unsubscribe-page/logo") => c.domains().unsubscribe_page().logo().upload(ID, PNG),
         ("DELETE", "/domains/{id}") => c.domains().delete(ID),
         ("GET", "/domains/{id}") => c.domains().get(ID),
         ("GET", "/domains") => c.domains().list(),
         ("PATCH", "/domains/{id}") => c.domains().update(ID, &b),
         ("POST", "/domains/{id}/verify") => c.domains().verify(ID),
         ("POST", "/emails/batch") => c.emails().batch(&b).idempotency_key("key-2").batch_validation("permissive"),
+        ("GET", "/emails/{email_id}/attachments/{id}") => c.emails().attachments().get(ID, ID2),
+        ("GET", "/emails/{email_id}/attachments") => c.emails().attachments().list(ID),
+        ("POST", "/emails/{id}/share") => c.emails().share(ID, &b),
+        ("DELETE", "/emails/{id}/share") => c.emails().unshare(ID),
+        ("POST", "/events") => c.events().create(&b),
+        ("GET", "/events/{id_or_name}") => c.events().get(ID),
+        ("GET", "/events") => c.events().list(),
+        ("DELETE", "/events/{id_or_name}") => c.events().remove(ID),
+        ("POST", "/events/send") => c.events().send(&b).idempotency_key("key-4"),
+        ("PATCH", "/events/{id_or_name}") => c.events().update(ID, &b),
         ("POST", "/emails/{id}/cancel") => c.emails().cancel(ID),
         ("DELETE", "/emails/{id}") => c.emails().delete(ID),
         ("GET", "/emails/{id}") => c.emails().get(ID),
@@ -116,6 +155,7 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("POST", "/emails") => c.emails().send(&b).idempotency_key("key-1"),
         ("PATCH", "/emails/{id}") => c.emails().update(ID, &b),
         ("GET", "/inboxes/{inbox_id}/agent") => c.inboxes().agent().get(INBOX),
+        ("PATCH", "/inboxes/{inbox_id}/agent") => c.inboxes().agent().update(INBOX, &b),
         ("GET", "/inboxes/{inbox_id}/codes/latest") => c.inboxes().codes().latest(INBOX).wait(5).max_age(600),
         ("POST", "/inboxes") => c.inboxes().create(&b),
         ("DELETE", "/inboxes/{inbox_id}") => c.inboxes().delete(INBOX),
@@ -152,6 +192,10 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("GET", "/inboxes/{inbox_id}/threads/search") => c.inboxes().threads().search(INBOX).query("invoice").from("billing@example.com").has_attachment(true),
         ("PATCH", "/inboxes/{inbox_id}/threads/{thread_id}") => c.inboxes().threads().update(INBOX, ID, &b),
         ("PATCH", "/inboxes/{inbox_id}") => c.inboxes().update(INBOX, &b),
+        ("GET", "/logs/{id}") => c.logs().get(ID),
+        ("GET", "/logs") => c.logs().list(),
+        ("GET", "/oauth/grants") => c.oauth_grants().list(),
+        ("DELETE", "/oauth/grants/{id}") => c.oauth_grants().revoke(ID),
         ("GET", "/segments/{id}/contacts") => c.segments().contacts().list(ID),
         ("POST", "/segments") => c.segments().create(&b),
         ("DELETE", "/segments/{id}") => c.segments().delete(ID),
@@ -177,7 +221,6 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("GET", "/topics") => c.topics().list(),
         ("PATCH", "/topics/{id}") => c.topics().update(ID, &b),
         ("POST", "/unsubscribes") => c.unsubscribes().create(&b),
-        ("DELETE", "/unsubscribes/{id}") => c.unsubscribes().delete(ID),
         ("GET", "/unsubscribes") => c.unsubscribes().list().domain_id(ID),
         ("GET", "/usage") => c.usage().get(),
         ("GET", "/verifications/availability") => c.verifications().availability(),
@@ -189,7 +232,11 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("DELETE", "/webhooks/{id}") => c.webhooks().delete(ID),
         ("GET", "/webhooks/{id}") => c.webhooks().get(ID),
         ("GET", "/webhooks") => c.webhooks().list(),
-        ("POST", "/webhooks/{id}/rotate") => c.webhooks().rotate(ID, &b),
+        ("GET", "/webhooks/{id}/events/{event_id}/attempts") => c.webhooks().events().attempts().list(ID, ID2),
+        ("GET", "/webhooks/{id}/events/{event_id}") => c.webhooks().events().get(ID, ID2),
+        ("GET", "/webhooks/{id}/events") => c.webhooks().events().list(ID),
+        ("POST", "/webhooks/{id}/events/{event_id}/replay") => c.webhooks().events().replay(ID, ID2),
+        ("POST", "/webhooks/{id}/signing-secret/rotate") => c.webhooks().rotate_signing_secret(ID, &b),
         ("PATCH", "/webhooks/{id}") => c.webhooks().update(ID, &b),
     }
 }
@@ -203,7 +250,7 @@ fn the_table_names_every_operation_once() {
     let unique: BTreeSet<(String, String)> = table.iter().cloned().collect();
     assert_eq!(unique.len(), table.len(), "an operation is listed twice");
     assert_eq!(unique, operation_keys());
-    assert_eq!(table.len(), 139);
+    assert_eq!(table.len(), 186);
 }
 
 async fn run_all(minimal: bool) {
@@ -273,4 +320,44 @@ async fn query_parameters_reach_the_request() {
     assert_eq!(call.query("has_attachment"), Some("true"));
     assert_eq!(call.query("limit"), Some("5"));
     mock.assert_clean();
+}
+
+/// Each method is its operation's `operationId` in snake_case: the table above
+/// is written by hand, so its calls are held to the document's names.
+#[test]
+fn every_method_is_named_after_its_operation_id() {
+    let source = include_str!("coverage.rs");
+    for op in OPERATIONS.iter() {
+        let id = op.spec()["operationId"].as_str().unwrap();
+        let row = source
+            .lines()
+            .map(str::trim)
+            .find(|l| l.starts_with(&format!("(\"{}\", \"{}\") =>", op.method, op.path)))
+            .unwrap_or_else(|| panic!("{id} has no row"));
+        let mut segments: Vec<String> = id.split('.').map(snake).collect();
+        // An operation that is also the group of others is the group's `get`.
+        let group = format!("{id}.");
+        if OPERATIONS.iter().any(|other| {
+            other.spec()["operationId"]
+                .as_str()
+                .is_some_and(|o| o.starts_with(&group))
+        }) {
+            segments.push("get".to_owned());
+        }
+        let last = segments.pop().unwrap();
+        let groups: String = segments.iter().map(|s| format!("{s}().")).collect();
+        let call = format!("c.{groups}{last}(");
+        assert!(row.contains(&call), "{id}: expected {call} in {row}");
+    }
+}
+
+fn snake(segment: &str) -> String {
+    let mut out = String::new();
+    for c in segment.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
 }

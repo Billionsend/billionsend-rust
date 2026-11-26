@@ -66,7 +66,8 @@ pub enum Error {
     /// A webhook whose signature, timestamp or body did not verify.
     WebhookVerification(ErrorDetails),
     /// An error the client made up without an API answer: a missing path
-    /// parameter, a body that does not serialise.
+    /// parameter, a body that does not serialise, a header HTTP cannot carry
+    /// (`invalid_header`).
     Application(ErrorDetails),
 }
 
@@ -116,6 +117,13 @@ impl Error {
 
     pub(crate) fn application(message: impl Into<String>) -> Self {
         Error::Application(ErrorDetails::application(message))
+    }
+
+    pub(crate) fn invalid_header(message: impl Into<String>) -> Self {
+        Error::Application(ErrorDetails {
+            name: "invalid_header".to_owned(),
+            ..ErrorDetails::application(message)
+        })
     }
 
     pub(crate) fn connection(message: impl Into<String>) -> Self {

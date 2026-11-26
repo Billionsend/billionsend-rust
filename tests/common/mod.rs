@@ -27,6 +27,9 @@ pub const API_KEY: &str = "bs_test_key";
 pub const ID: &str = "6a1f1d38-3c55-4a4e-9a57-0f2b3c4d5e6f";
 pub const ID2: &str = "7b2e2e49-4d66-4b5f-8b68-1a3c4d5e6f70";
 pub const INBOX: &str = "support@example.com";
+/// The first bytes of a PNG, and a small CSV, for the uploads.
+pub const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR";
+pub const CSV: &[u8] = b"email,first_name\nana@example.com,Ana\n";
 
 pub static SPEC: LazyLock<Value> = LazyLock::new(|| {
     let text = std::fs::read_to_string(concat!(
@@ -231,17 +234,25 @@ fn format_example(format: &str) -> Option<&'static str> {
     })
 }
 
+fn constrains(schema: &Value) -> bool {
+    ["type", "enum", "anyOf", "oneOf", "allOf", "properties"]
+        .iter()
+        .any(|k| schema.get(k).is_some())
+}
+
 /// A deterministic instance of `schema`: objects get every property when
 /// `full`, otherwise only the required ones.
 pub fn example(schema: &Value, full: bool) -> Value {
     let s = deref(schema);
-    if let Some([only]) = s.get("allOf").and_then(Value::as_array).map(Vec::as_slice) {
-        return example(only, full);
+    // An `allOf` with one member that constrains anything (the others only
+    // describe it) is that member.
+    if let Some(members) = s.get("allOf").and_then(Value::as_array) {
+        let mut constraining = members.iter().filter(|m| constrains(deref(m)));
+        if let (Some(only), None) = (constraining.next(), constraining.next()) {
+            return example(only, full);
+        }
     }
-    let constrained = ["type", "enum", "anyOf", "oneOf", "properties"]
-        .iter()
-        .any(|k| s.get(k).is_some());
-    if !constrained {
+    if !constrains(s) {
         return json!({});
     }
     if let Some(variants) = s
@@ -333,6 +344,113 @@ pub fn body_example(op: &Operation) -> Value {
     }
 }
 
+// ------------------------------------------------------------------- multipart
+
+/// One part of a `multipart/form-data` body.
+#[derive(Clone, Debug)]
+pub struct Part {
+    pub name: String,
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub data: Vec<u8>,
+}
+
+impl Part {
+    pub fn text(&self) -> &str {
+        std::str::from_utf8(&self.data).expect("a text part")
+    }
+}
+
+fn position(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// The parts of a well-formed body, `None` for anything else.
+fn parse_multipart(boundary: &str, body: &[u8]) -> Option<Vec<Part>> {
+    let delimiter = format!("\r\n--{boundary}");
+    let mut rest = body.strip_prefix(format!("--{boundary}").as_bytes())?;
+    let mut parts = Vec::new();
+    loop {
+        if rest == b"--\r\n" {
+            return Some(parts);
+        }
+        rest = rest.strip_prefix(b"\r\n")?;
+        let head_end = position(rest, b"\r\n\r\n")?;
+        let head = std::str::from_utf8(&rest[..head_end]).ok()?;
+        rest = &rest[head_end + 4..];
+        let end = position(rest, delimiter.as_bytes())?;
+        let mut part = Part {
+            name: String::new(),
+            file_name: None,
+            content_type: None,
+            data: rest[..end].to_vec(),
+        };
+        for line in head.split("\r\n") {
+            let (name, value) = line.split_once(": ")?;
+            if name.eq_ignore_ascii_case("content-type") {
+                part.content_type = Some(value.to_owned());
+                continue;
+            }
+            if !name.eq_ignore_ascii_case("content-disposition") {
+                return None;
+            }
+            let mut pieces = value.split("; ");
+            if pieces.next() != Some("form-data") {
+                return None;
+            }
+            for piece in pieces {
+                let (key, quoted) = piece.split_once('=')?;
+                let text = quoted.strip_prefix('"')?.strip_suffix('"')?.to_owned();
+                match key {
+                    "name" => part.name = text,
+                    "filename" => part.file_name = Some(text),
+                    _ => return None,
+                }
+            }
+        }
+        parts.push(part);
+        rest = &rest[end + delimiter.len()..];
+    }
+}
+
+/// Checks an upload against the operation's form schema: declared fields once
+/// each, one file part for the binary one, text parts that validate.
+fn check_form(op: &Operation, content_type: &str, body: &[u8]) -> Result<Vec<Part>, String> {
+    let boundary = content_type
+        .strip_prefix("multipart/form-data; boundary=")
+        .ok_or("body must be multipart/form-data with a boundary")?;
+    let parts = parse_multipart(boundary, body).ok_or("malformed multipart body")?;
+    let pointer = format!(
+        "{}/requestBody/content/multipart~1form-data/schema",
+        op.pointer
+    );
+    let schema = deref(SPEC.pointer(&pointer).expect("form schema"));
+    let mut fields = Map::new();
+    let mut files = 0;
+    for part in &parts {
+        let property = schema["properties"]
+            .get(&part.name)
+            .ok_or_else(|| format!("undeclared form field {}", part.name))?;
+        let binary = deref(property)["format"] == "binary";
+        if binary != part.file_name.is_some() || binary != part.content_type.is_some() {
+            return Err(format!("field {} is sent as the wrong kind", part.name));
+        }
+        files += usize::from(binary);
+        let value = if binary { "" } else { part.text() };
+        if fields.insert(part.name.clone(), json!(value)).is_some() {
+            return Err(format!("form field {} sent more than once", part.name));
+        }
+    }
+    if files != 1 {
+        return Err(format!("expected one file, got {files}"));
+    }
+    let errors = violations(&Value::Object(fields), &pointer);
+    if !errors.is_empty() {
+        return Err(format!("form: {}", errors.join("; ")));
+    }
+    Ok(parts)
+}
+
 // ------------------------------------------------------------------- the mock
 
 #[derive(Clone, Debug)]
@@ -343,6 +461,8 @@ pub struct Recorded {
     pub query: Vec<(String, String)>,
     pub headers: http::HeaderMap,
     pub body: Value,
+    /// The parts of an upload.
+    pub parts: Vec<Part>,
 }
 
 impl Recorded {
@@ -536,6 +656,7 @@ fn handle(state: &mut State, request: &Request) -> Result<ResponseTemplate, Stri
 
     // Body
     let mut body = Value::Null;
+    let mut parts = Vec::new();
     match op.spec().get("requestBody") {
         None if !request.body.is_empty() => return Err(format!("{at}: takes no request body")),
         None => {}
@@ -543,6 +664,15 @@ fn handle(state: &mut State, request: &Request) -> Result<ResponseTemplate, Stri
             if spec["required"] == true {
                 return Err(format!("{at}: request body missing"));
             }
+        }
+        Some(spec) if spec["content"].get("multipart/form-data").is_some() => {
+            let content_type = request
+                .headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            parts =
+                check_form(&op, content_type, &request.body).map_err(|e| format!("{at}: {e}"))?;
         }
         Some(_) => {
             let content_type = request
@@ -575,6 +705,7 @@ fn handle(state: &mut State, request: &Request) -> Result<ResponseTemplate, Stri
         query,
         headers: request.headers.clone(),
         body,
+        parts,
     });
 
     if let Some(answer) = state
