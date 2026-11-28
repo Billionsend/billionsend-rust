@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 (2026-11-28)
+
+The OpenAPI snapshot follows the published document (193 operations, up from 186).
+
+- New operations: multi-domain sends as `broadcast_groups()` (`create`, `list`, `get`, `update`, `remove`, `send`, `cancel`): one group names two to twenty of your verified domains and gets one broadcast per domain, each mailing the contacts that belong to it. `broadcast_groups().list()` has `into_stream()` like every cursor list.
+- Changed: `automations().stop(id, &body)` takes the request body the document now declares (`cancel_runs`, to cancel the runs already going as well; pass `&json!({})` to let them finish). This changes the method's signature.
+- Doc comments follow the published descriptions, which also changed for broadcasts (`domain_id`, the group they belong to), domains, emails, topics and contact topics.
+
 ## 0.2.0 (2026-11-26)
 
 The OpenAPI snapshot follows the published document (186 operations, up from 139), and the SDK follows it.

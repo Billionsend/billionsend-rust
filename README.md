@@ -2,7 +2,7 @@
 
 The official Rust client for the [BillionSend](https://billionsend.com) email API: send email, run inboxes for people and agents, stream inbox events, verify webhooks, and manage domains, contacts, broadcasts and automations.
 
-- Every API operation (186), one method each, named after the operation in the BillionSend OpenAPI document.
+- Every API operation (193), one method each, named after the operation in the BillionSend OpenAPI document.
 - Answers as `serde_json::Value`, or any type you deserialise them into with `.json::<T>()`. Request bodies are anything that implements `serde::Serialize`.
 - Errors as one enum, a variant per kind, each with the status, the API's error name, the message and the request id.
 - Safe sends: every send carries an `Idempotency-Key`, so retries after a timeout never send twice.
@@ -327,7 +327,8 @@ Every request builder also has `.header(..)`, `.timeout(..)` and `.max_retries(.
 | `audiences().contacts()` | contacts addressed through an audience |
 | `contact_properties()`, `segments()`, `topics()` | create, list, get, update, delete (segment contacts under `segments().contacts()`) |
 | `broadcasts()` | create, list, get, update, delete, send, duplicate, cancel, recipients, clicked_links |
-| `automations()` | create, list, get, update, remove, validate, duplicate, simulate, stop, metrics, `runs()` (list, get, cancel) |
+| `broadcast_groups()` | create, list, get, update, remove, send, cancel (one send from several domains) |
+| `automations()` | create, list, get, update, remove, validate, duplicate, simulate, stop (takes an optional body, `cancel_runs`), metrics, `runs()` (list, get, cancel) |
 | `events()` | create, list, get, update, remove, send (custom events) |
 | `templates()` | create, list, get, update, delete, publish, duplicate |
 | `webhooks()` | create, list, get, update, delete, rotate_signing_secret, `events()` (list, get, replay, `attempts()`) |
@@ -366,7 +367,7 @@ cargo test                     # what fails is what the SDK has to follow
 
 Publishing is manual; nothing is published on push.
 
-1. Set `version` in `Cargo.toml`, turn the changelog's `Unreleased` heading into that version, commit, then tag and push: `git tag -a v0.2.0 -m "release 0.2.0" && git push origin main v0.2.0`.
+1. Set `version` in `Cargo.toml`, turn the changelog's `Unreleased` heading into that version, commit, then tag and push: `git tag -a v0.3.0 -m "release 0.3.0" && git push origin main v0.3.0`.
 2. The first version only: an owner of the crate's crates.io account publishes from a clean checkout of the tag with an API token (scope `publish-new`): `cargo test && cargo publish --dry-run && cargo publish`.
 3. Once the crate exists: on crates.io, `billionsend` → Settings → Trusted Publishing → GitHub, repository `billionsend/billionsend-rust`, workflow `release.yml`, environment `crates-io`.
 4. Every later version: Actions → `release` → Run workflow, on the version tag. The workflow refuses a branch or a tag that differs from `Cargo.toml`, runs every check, and publishes with crates.io Trusted Publishing (no token stored).

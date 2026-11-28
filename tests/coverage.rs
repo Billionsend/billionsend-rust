@@ -73,13 +73,20 @@ fn calls() -> Vec<(&'static str, &'static str, Call)> {
         ("GET", "/automations/{id}/runs/{run_id}") => c.automations().runs().get(ID, ID2),
         ("GET", "/automations/{id}/runs") => c.automations().runs().list(ID),
         ("POST", "/automations/{id}/simulate") => c.automations().simulate(ID, &b),
-        ("POST", "/automations/{id}/stop") => c.automations().stop(ID),
+        ("POST", "/automations/{id}/stop") => c.automations().stop(ID, &b),
         ("PATCH", "/automations/{id}") => c.automations().update(ID, &b),
         ("POST", "/automations/validate") => c.automations().validate(&b),
         ("GET", "/brand") => c.brand().get(),
         ("DELETE", "/brand/logo") => c.brand().logo().delete(),
         ("PUT", "/brand/logo") => c.brand().logo().upload(PNG),
         ("PATCH", "/brand") => c.brand().update(&b),
+        ("POST", "/broadcast-groups/{id}/cancel") => c.broadcast_groups().cancel(ID),
+        ("POST", "/broadcast-groups") => c.broadcast_groups().create(&b),
+        ("GET", "/broadcast-groups/{id}") => c.broadcast_groups().get(ID),
+        ("GET", "/broadcast-groups") => c.broadcast_groups().list(),
+        ("DELETE", "/broadcast-groups/{id}") => c.broadcast_groups().remove(ID),
+        ("POST", "/broadcast-groups/{id}/send") => c.broadcast_groups().send(ID, &b),
+        ("PATCH", "/broadcast-groups/{id}") => c.broadcast_groups().update(ID, &b),
         ("POST", "/broadcasts/{id}/cancel") => c.broadcasts().cancel(ID),
         ("GET", "/broadcasts/{id}/clicked-links") => c.broadcasts().clicked_links(ID),
         ("POST", "/broadcasts") => c.broadcasts().create(&b),
@@ -250,7 +257,7 @@ fn the_table_names_every_operation_once() {
     let unique: BTreeSet<(String, String)> = table.iter().cloned().collect();
     assert_eq!(unique.len(), table.len(), "an operation is listed twice");
     assert_eq!(unique, operation_keys());
-    assert_eq!(table.len(), 186);
+    assert_eq!(table.len(), 193);
 }
 
 async fn run_all(minimal: bool) {

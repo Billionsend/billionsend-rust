@@ -23,6 +23,10 @@ impl BillionSend {
     pub fn brand(&self) -> resources::Brand<'_> {
         resources::Brand { client: self }
     }
+    /// The `broadcastGroups` operations.
+    pub fn broadcast_groups(&self) -> resources::BroadcastGroups<'_> {
+        resources::BroadcastGroups { client: self }
+    }
     /// The `broadcasts` operations.
     pub fn broadcasts(&self) -> resources::Broadcasts<'_> {
         resources::Broadcasts { client: self }
@@ -410,14 +414,19 @@ pub mod resources {
         ///
         /// `POST /automations/{id}/stop`
         ///
-        /// Sets the automation to disabled: no new runs start; runs already going finish. Stopping a stopped automation answers the same.
-        pub fn stop(&self, id: impl AsRef<str>) -> requests::AutomationsStop {
+        /// Sets the automation to disabled: no new runs start; runs already going finish, unless cancel_runs cancels them. Stopping a stopped automation answers the same, and with cancel_runs cancels what is still going, so a call cut short can be repeated.
+        pub fn stop<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::AutomationsStop {
             let inner = Request::new(
                 self.client,
                 Method::POST,
                 "/automations/{id}/stop",
                 &[("id", id.as_ref())],
-            );
+            )
+            .json(body);
             requests::AutomationsStop { inner }
         }
         /// Update an automation
@@ -576,6 +585,113 @@ pub mod resources {
                 FileKind::Image,
             );
             requests::BrandLogoUpload { inner }
+        }
+    }
+
+    /// The `broadcastGroups` operations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct BroadcastGroups<'a> {
+        pub(crate) client: &'a BillionSend,
+    }
+
+    impl BroadcastGroups<'_> {
+        /// Cancel a broadcast group
+        ///
+        /// `POST /broadcast-groups/{id}/cancel`
+        pub fn cancel(&self, id: impl AsRef<str>) -> requests::BroadcastGroupsCancel {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/broadcast-groups/{id}/cancel",
+                &[("id", id.as_ref())],
+            );
+            requests::BroadcastGroupsCancel { inner }
+        }
+        /// Create a broadcast group
+        ///
+        /// `POST /broadcast-groups`
+        ///
+        /// BillionSend extension: one send from several sending domains. The group holds a broadcast per domain, all with the same content, from the same name and local part, to the same audience; each contact is mailed from one of the domains and keeps it for later sends.
+        pub fn create<B: serde::Serialize + ?Sized>(
+            &self,
+            body: &B,
+        ) -> requests::BroadcastGroupsCreate {
+            let inner =
+                Request::new(self.client, Method::POST, "/broadcast-groups", &[]).json(body);
+            requests::BroadcastGroupsCreate { inner }
+        }
+        /// Retrieve a broadcast group
+        ///
+        /// `GET /broadcast-groups/{id}`
+        pub fn get(&self, id: impl AsRef<str>) -> requests::BroadcastGroupsGet {
+            let inner = Request::new(
+                self.client,
+                Method::GET,
+                "/broadcast-groups/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::BroadcastGroupsGet { inner }
+        }
+        /// List broadcast groups
+        ///
+        /// `GET /broadcast-groups`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
+        pub fn list(&self) -> requests::BroadcastGroupsList {
+            let inner = Request::new(self.client, Method::GET, "/broadcast-groups", &[]);
+            requests::BroadcastGroupsList { inner }
+        }
+        /// Delete a broadcast group
+        ///
+        /// `DELETE /broadcast-groups/{id}`
+        ///
+        /// Only while all its broadcasts are drafts; they are deleted with it.
+        pub fn remove(&self, id: impl AsRef<str>) -> requests::BroadcastGroupsRemove {
+            let inner = Request::new(
+                self.client,
+                Method::DELETE,
+                "/broadcast-groups/{id}",
+                &[("id", id.as_ref())],
+            );
+            requests::BroadcastGroupsRemove { inner }
+        }
+        /// Send a broadcast group
+        ///
+        /// `POST /broadcast-groups/{id}/send`
+        ///
+        /// Every broadcast of the group passes the checks a broadcast's send passes, and the capacity plan; all are then scheduled together, or none is.
+        pub fn send<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::BroadcastGroupsSend {
+            let inner = Request::new(
+                self.client,
+                Method::POST,
+                "/broadcast-groups/{id}/send",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::BroadcastGroupsSend { inner }
+        }
+        /// Update a broadcast group
+        ///
+        /// `PATCH /broadcast-groups/{id}`
+        ///
+        /// Only while all its broadcasts are drafts. Its broadcasts are rewritten: one kept keeps its id, a new domain gets one, a removed domain's is deleted.
+        pub fn update<B: serde::Serialize + ?Sized>(
+            &self,
+            id: impl AsRef<str>,
+            body: &B,
+        ) -> requests::BroadcastGroupsUpdate {
+            let inner = Request::new(
+                self.client,
+                Method::PATCH,
+                "/broadcast-groups/{id}",
+                &[("id", id.as_ref())],
+            )
+            .json(body);
+            requests::BroadcastGroupsUpdate { inner }
         }
     }
 
@@ -1049,6 +1165,8 @@ pub mod resources {
         /// List contact topics
         ///
         /// `GET /contacts/{id}/topics`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
         pub fn list(&self, id: impl AsRef<str>) -> requests::ContactsTopicsList {
             let inner = Request::new(
                 self.client,
@@ -1344,6 +1462,8 @@ pub mod resources {
         /// Delete an email
         ///
         /// `DELETE /emails/{id}`
+        ///
+        /// Deletes the email with its events, stored content and share links; an email that has not gone out also gives its volume back. An email that went out less than 7 days ago answers `409 email_recently_sent`, because bounce and complaint reports still arrive for it; the days count from the moment it was handed over for sending, whatever came of it, and the message names the earliest time it can be deleted. BillionSend extension.
         pub fn delete(&self, id: impl AsRef<str>) -> requests::EmailsDelete {
             let inner = Request::new(
                 self.client,
@@ -3021,6 +3141,8 @@ pub mod resources {
         /// List topics
         ///
         /// `GET /topics`
+        ///
+        /// Newest first, with cursor pagination: `after` takes the last id of a page and pages toward older items, `before` takes the first id and pages back toward newer ones.
         pub fn list(&self) -> requests::TopicsList {
             let inner = Request::new(self.client, Method::GET, "/topics", &[]);
             requests::TopicsList { inner }
@@ -3735,6 +3857,100 @@ pub mod requests {
     }
     request_builder!(BrandUpdate);
 
+    /// The request of [`broadcastGroups.cancel`](crate::resources::BroadcastGroups::cancel): `POST /broadcast-groups/{id}/cancel`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsCancel {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsCancel);
+
+    /// The request of [`broadcastGroups.create`](crate::resources::BroadcastGroups::create): `POST /broadcast-groups`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsCreate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsCreate);
+
+    /// The request of [`broadcastGroups.get`](crate::resources::BroadcastGroups::get): `GET /broadcast-groups/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsGet {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsGet);
+
+    /// The request of [`broadcastGroups.list`](crate::resources::BroadcastGroups::list): `GET /broadcast-groups`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsList {
+        pub(crate) inner: Request,
+    }
+    impl BroadcastGroupsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
+    request_builder!(BroadcastGroupsList);
+    paginated_builder!(BroadcastGroupsList);
+
+    /// The request of [`broadcastGroups.remove`](crate::resources::BroadcastGroups::remove): `DELETE /broadcast-groups/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsRemove {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsRemove);
+
+    /// The request of [`broadcastGroups.send`](crate::resources::BroadcastGroups::send): `POST /broadcast-groups/{id}/send`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsSend {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsSend);
+
+    /// The request of [`broadcastGroups.update`](crate::resources::BroadcastGroups::update): `PATCH /broadcast-groups/{id}`.
+    ///
+    /// Await it to send the request; it resolves to the answer's JSON.
+    #[derive(Debug, Clone)]
+    #[must_use = "a request is sent only when awaited"]
+    pub struct BroadcastGroupsUpdate {
+        pub(crate) inner: Request,
+    }
+    request_builder!(BroadcastGroupsUpdate);
+
     /// The request of [`broadcasts.cancel`](crate::resources::Broadcasts::cancel): `POST /broadcasts/{id}/cancel`.
     ///
     /// Await it to send the request; it resolves to the answer's JSON.
@@ -4286,7 +4502,31 @@ pub mod requests {
     pub struct ContactsTopicsList {
         pub(crate) inner: Request,
     }
+    impl ContactsTopicsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
     request_builder!(ContactsTopicsList);
+    paginated_builder!(ContactsTopicsList);
 
     /// The request of [`contacts.topics.update`](crate::resources::ContactsTopics::update): `PATCH /contacts/{id}/topics`.
     ///
@@ -6270,7 +6510,31 @@ pub mod requests {
     pub struct TopicsList {
         pub(crate) inner: Request,
     }
+    impl TopicsList {
+        /// Page size, 1-100 (default 20)
+        ///
+        /// The `limit` query parameter.
+        pub fn limit(mut self, value: i64) -> Self {
+            self.inner.set_query("limit", value.to_string());
+            self
+        }
+        /// Cursor: id of the last item of the current page; returns the next page. Must be an id this list returned; there is no sentinel value.
+        ///
+        /// The `after` query parameter.
+        pub fn after(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("after", value.into());
+            self
+        }
+        /// Cursor: id of the first item of the current page; returns the previous page; same rule as after.
+        ///
+        /// The `before` query parameter.
+        pub fn before(mut self, value: impl Into<String>) -> Self {
+            self.inner.set_query("before", value.into());
+            self
+        }
+    }
     request_builder!(TopicsList);
+    paginated_builder!(TopicsList);
 
     /// The request of [`topics.update`](crate::resources::Topics::update): `PATCH /topics/{id}`.
     ///

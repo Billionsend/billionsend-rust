@@ -88,3 +88,65 @@ async fn broadcast_recipients_page_with_their_filter() {
     assert_eq!(calls[1].query("bounce_type"), Some("permanent"));
     mock.assert_clean();
 }
+
+#[tokio::test]
+async fn a_broadcast_group_is_created_listed_sent_and_cancelled() {
+    let mock = ContractMock::start().await;
+    let client = mock.client();
+    let domains = [ID, "1c7a6b3f-8d2e-4f9b-a04c-3e5d7f9b1c2d"];
+    client
+        .broadcast_groups()
+        .create(&json!({
+            "name": "Spring sale",
+            "domain_ids": domains,
+            "from_local_part": "news",
+            "subject": "Spring sale",
+            "html": "<p>Hello</p>",
+        }))
+        .await
+        .unwrap();
+    let call = mock.last();
+    assert_eq!(call.body["domain_ids"], json!(domains));
+    assert_eq!(call.body["from_local_part"], "news");
+
+    client
+        .broadcast_groups()
+        .list()
+        .limit(5)
+        .after(ID)
+        .await
+        .unwrap();
+    let call = mock.last();
+    assert_eq!(call.query("limit"), Some("5"));
+    assert_eq!(call.query("after"), Some(ID));
+
+    client.broadcast_groups().get(ID).await.unwrap();
+    assert_eq!(mock.last().path_params["id"], ID);
+    client
+        .broadcast_groups()
+        .update(ID, &json!({ "subject": "Summer sale" }))
+        .await
+        .unwrap();
+    assert_eq!(mock.last().body["subject"], "Summer sale");
+    client
+        .broadcast_groups()
+        .send(ID, &json!({ "scheduled_at": "in 1 hour" }))
+        .await
+        .unwrap();
+    assert_eq!(mock.last().body["scheduled_at"], "in 1 hour");
+    client.broadcast_groups().cancel(ID).await.unwrap();
+    client.broadcast_groups().remove(ID).await.unwrap();
+    mock.assert_clean();
+}
+
+#[tokio::test]
+async fn an_automation_stop_carries_its_body() {
+    let mock = ContractMock::start().await;
+    mock.client()
+        .automations()
+        .stop(ID, &json!({ "cancel_runs": true }))
+        .await
+        .unwrap();
+    assert_eq!(mock.last().body["cancel_runs"], true);
+    mock.assert_clean();
+}
